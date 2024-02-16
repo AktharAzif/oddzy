@@ -1,0 +1,7 @@
+{
+	"name": "Oddzy",
+	"build": {
+		"context": "..",
+		"dockerfile": "../Dockerfile"
+	}
+}

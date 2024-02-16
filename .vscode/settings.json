@@ -1,0 +1,11 @@
+{
+	"sqltools.connections": [
+		{
+			"previewLimit": 50,
+			"server": "localhost",
+			"driver": "PostgreSQL",
+			"name": "Oddzy Dev",
+			"connectString": "postgresql://postgres:B3FG3gc3dFABC25FdCgD4EfEaAaebfFF@viaduct.proxy.rlwy.net:59637/railway"
+		}
+	]
+}
