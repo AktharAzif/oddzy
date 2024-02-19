@@ -102,7 +102,7 @@ type InsertBetTxSqlPayload = {
 	bet_quantity: number;
 };
 
-type InsertMatchedSqlPayload = {
+type InsertMatchedBetSqlPayload = {
 	bet_id: string;
 	matched_bet_id: string;
 	quantity: number;
@@ -153,7 +153,7 @@ type GetUnmatchedOrdersPayload = {
 type GetSellPayoutTxSqlPayload = {
 	userId: string;
 	sellBet: Bet;
-	buyBet: Bet;
+	buyBet?: Bet;
 	event: Event;
 };
 
@@ -178,6 +178,14 @@ type GetInsertBetTxSqlPayload = {
 	remainingQuantity: number;
 	type: BetType;
 	buyBet?: Bet;
+};
+
+type PlaceCounterLiquidityBetPayload = {
+	bet: Bet;
+	event: Event;
+	selectedOption: Option;
+	otherOption: Option;
+	quantity: number;
 };
 
 const createOrUpdateCategory = async (payload: EventSchema.CreateOrUpdateCategoryPayload): Promise<Category> => {
@@ -361,6 +369,33 @@ const updateOptions = async (payload: EventSchema.UpdateEventOptionPayload): Pro
 	return z.array(Option).parse(res);
 };
 
+const _validateOption = async (eventId: string, optionId: number) => {
+	const option = z.array(Option).parse(
+		await db.sql`SELECT *
+                 FROM "event".option
+                 WHERE event_id = ${eventId};`
+	);
+
+	const selectedOption = option.find((item) => item.id === optionId);
+	if (!selectedOption) throw new ErrorUtil.HttpException(400, "Invalid option id.");
+	const otherOption = option.find((item) => item.id !== optionId) as Option;
+
+	return { selectedOption, otherOption };
+};
+
+const _validateEvent = async (sql: TransactionSql, eventId: string) => {
+	const [event] = z.array(Event).parse(
+		await sql`SELECT *
+              FROM "event".event
+              WHERE id = ${eventId};`
+	);
+
+	if (!event) throw new ErrorUtil.HttpException(400, "Event not found.");
+	if (event.status !== "live") throw new ErrorUtil.HttpException(400, "Only live events are allowed for betting.");
+	if (event.frozen) throw new ErrorUtil.HttpException(400, "Betting is locked for this event.");
+	return event;
+};
+
 const _buyBetValidation = (sql: TransactionSql, { userId, event, selectedOption, buyBetId }: BuyBetValidationPayload) =>
 	sql`
       SELECT *
@@ -475,7 +510,17 @@ const _getUnmatchedOrders = async (sql: TransactionSql, { event, type, selectedO
       ORDER BY total_price DESC, created_at;
 	` as Promise<(Bet & { total_price: number })[]>;
 
-const _getSellPayoutTxSqlPayload = ({ sellBet, buyBet, event, userId }: GetSellPayoutTxSqlPayload) => {
+const _getSellPayoutTxSqlPayload = async (sql: TransactionSql, { sellBet, event, userId, buyBet }: GetSellPayoutTxSqlPayload) => {
+	buyBet =
+		buyBet ||
+		Bet.parse(
+			(
+				await sql`SELECT *
+                  FROM "event".bet
+                  WHERE id = ${sellBet.buy_bet_id as string}`
+			)[0]
+		);
+
 	const buyBetTotal = buyBet.price_per_quantity * sellBet.quantity;
 	const sellBetTotal = sellBet.price_per_quantity * sellBet.quantity;
 
@@ -516,7 +561,7 @@ const _matchOrders = async (sql: TransactionSql, { event, betId, selectedOption,
 		})
 	);
 	const updateBetSqlPayload: UpdateBetSqlPayload[] = [];
-	const insertMatchedSqlPayload: InsertMatchedSqlPayload[] = [];
+	const insertMatchedBetSqlPayload: InsertMatchedBetSqlPayload[] = [];
 	const insertBetTxSqlPayload: InsertBetTxSqlPayload[] = [];
 
 	let remainingQuantity = quantity;
@@ -527,7 +572,7 @@ const _matchOrders = async (sql: TransactionSql, { event, betId, selectedOption,
 		const matchedQuantity = remainingQuantity < order.unmatched_quantity ? remainingQuantity : order.unmatched_quantity;
 		remainingQuantity -= matchedQuantity;
 
-		insertMatchedSqlPayload.push({
+		insertMatchedBetSqlPayload.push({
 			bet_id: betId,
 			matched_bet_id: order.id,
 			quantity: matchedQuantity
@@ -536,16 +581,9 @@ const _matchOrders = async (sql: TransactionSql, { event, betId, selectedOption,
 		const unmatchedQuantity = order.unmatched_quantity - matchedQuantity;
 
 		if (order.type === "sell" && unmatchedQuantity === 0 && order.user_id) {
-			const [buyBet]: Bet[] = z.array(Bet).parse(
-				await sql`SELECT *
-                  FROM "event".bet
-                  WHERE id = ${order.buy_bet_id as string}`
-			);
-
-			const { payoutTxSqlPayload, profit, platformCommission } = _getSellPayoutTxSqlPayload({
+			const { payoutTxSqlPayload, profit, platformCommission } = await _getSellPayoutTxSqlPayload(sql, {
 				userId: order.user_id,
 				sellBet: order,
-				buyBet,
 				event
 			});
 
@@ -568,24 +606,16 @@ const _matchOrders = async (sql: TransactionSql, { event, betId, selectedOption,
 
 	return {
 		insertBetTxSqlPayload,
-		insertMatchedSqlPayload,
+		insertMatchedBetSqlPayload,
 		updateBetSqlPayload,
 		remainingQuantity
 	};
 };
 
-const _getInsertBetTxSqlPayload = async ({
-	userId,
-	betId,
-	option,
-	event,
-	price,
-	rewardAmountUsed,
-	quantity,
-	remainingQuantity,
-	type,
-	buyBet
-}: GetInsertBetTxSqlPayload): Promise<[Bet, InsertBetTxSqlPayload | null]> => {
+const _getInsertBetTxSqlPayload = async (
+	sql: TransactionSql,
+	{ userId, betId, option, event, price, rewardAmountUsed, quantity, remainingQuantity, type, buyBet }: GetInsertBetTxSqlPayload
+): Promise<[Bet, InsertBetTxSqlPayload | null]> => {
 	const insertBetSqlPayload: Bet = {
 		id: betId,
 		event_id: event.id,
@@ -606,7 +636,7 @@ const _getInsertBetTxSqlPayload = async ({
 	};
 
 	if (remainingQuantity === 0 && type === "sell") {
-		const { payoutTxSqlPayload, profit, platformCommission } = _getSellPayoutTxSqlPayload({
+		const { payoutTxSqlPayload, profit, platformCommission } = await _getSellPayoutTxSqlPayload(sql, {
 			userId,
 			sellBet: insertBetSqlPayload,
 			//@ts-ignore - buyBetId is defined if type is sell
@@ -629,34 +659,17 @@ const _getInsertBetTxSqlPayload = async ({
 const placeBet = async (userId: string, payload: EventSchema.PlaceBetPayload) => {
 	const { price, quantity, eventId, type, buyBetId, optionId } = payload;
 
-	const option = z.array(Option).parse(
-		await db.sql`SELECT *
-                 FROM "event".option
-                 WHERE event_id = ${eventId};`
-	);
-
-	const selectedOption = option.find((item) => item.id === optionId);
-	if (!selectedOption) throw new ErrorUtil.HttpException(400, "Invalid option id.");
-	const otherOption = option.find((item) => item.id !== optionId) as Option;
+	const { selectedOption, otherOption } = await _validateOption(eventId, optionId);
 
 	const betId = createId();
 	const totalPrice = price * quantity;
 
 	const insertBetTxSqlPayload: InsertBetTxSqlPayload[] = [];
-
 	let reward_amount_used = 0;
 
 	return await db.sql.begin(async (sql) => {
 		//Event validation is done inside the transaction to avoid the possibility of event getting completed after the validation
-		const [event] = z.array(Event).parse(
-			await db.sql`SELECT *
-                   FROM "event".event
-                   WHERE id = ${eventId};`
-		);
-
-		if (!event) throw new ErrorUtil.HttpException(400, "Event not found.");
-		if (event.status !== "live") throw new ErrorUtil.HttpException(400, "Only live events are allowed for betting.");
-		if (event.frozen) throw new ErrorUtil.HttpException(400, "Betting is locked for this event.");
+		const event = await _validateEvent(sql, eventId);
 		if (event.win_price < price) throw new ErrorUtil.HttpException(400, "Price is higher than win price.");
 
 		//Fetching buy bet if the order is a sell bet to validate the quantity. Casting buy_bet_id as string because it's already validated in the graphql resolver
@@ -687,7 +700,7 @@ const placeBet = async (userId: string, payload: EventSchema.PlaceBetPayload) =>
 		const {
 			remainingQuantity,
 			updateBetSqlPayload,
-			insertMatchedSqlPayload,
+			insertMatchedBetSqlPayload,
 			insertBetTxSqlPayload: _insertBetTxSqlPayload
 		} = await _matchOrders(sql, {
 			event,
@@ -701,7 +714,7 @@ const placeBet = async (userId: string, payload: EventSchema.PlaceBetPayload) =>
 
 		insertBetTxSqlPayload.push(..._insertBetTxSqlPayload);
 
-		const [bet, insertSellBetTxSqlPayload] = await _getInsertBetTxSqlPayload({
+		const [bet, insertSellBetTxSqlPayload] = await _getInsertBetTxSqlPayload(sql, {
 			userId,
 			betId,
 			option: selectedOption,
@@ -738,10 +751,134 @@ const placeBet = async (userId: string, payload: EventSchema.PlaceBetPayload) =>
 		}
 
 		insertBetTxSqlPayload.length && (await sql`INSERT INTO "wallet".transaction ${sql(insertBetTxSqlPayload)}`);
-		insertMatchedSqlPayload.length && (await sql`INSERT INTO "event".matched ${sql(insertMatchedSqlPayload)}`);
+		insertMatchedBetSqlPayload.length && (await sql`INSERT INTO "event".matched ${sql(insertMatchedBetSqlPayload)}`);
 		return res;
 	});
 };
+
+const _getLiquidityMatchableBets = async () =>
+	z.array(Bet).parse(
+		await db.sql`
+        SELECT bet.*
+        FROM "event".bet
+                 JOIN "event".event ON bet.event_id = event.id
+        WHERE event.status = 'live'
+          AND event.frozen = false
+          AND bet.user_id IS NOT NULL
+          AND bet.unmatched_quantity > 0
+          AND bet.price_per_quantity <= event.platform_liquidity_left
+          AND bet.updated_at < NOW() - INTERVAL '20 seconds'
+        ORDER BY bet.price_per_quantity * bet.quantity DESC, bet.created_at`
+	);
+
+const _placeCounterLiquidityBet = async (sql: TransactionSql, { bet, event, selectedOption, otherOption, quantity }: PlaceCounterLiquidityBetPayload) => {
+	let insertBetSellTxSqlPayload: InsertBetTxSqlPayload | null = null;
+
+	const commonBetBody = {
+		id: createId(),
+		event_id: bet.event_id,
+		user_id: null,
+		quantity,
+		type: BetType.Values.buy,
+		sold_quantity: 0,
+		reward_amount_used: 0,
+		unmatched_quantity: 0,
+		buy_bet_id: null,
+		profit: null,
+		platform_commission: null,
+		created_at: new Date(),
+		updated_at: new Date()
+	};
+
+	let counterBet: Bet;
+
+	if (bet.type === "sell") {
+		counterBet = {
+			option_id: selectedOption.id,
+			price_per_quantity: bet.price_per_quantity,
+			...commonBetBody
+		};
+
+		const unmatchedQuantity = bet.unmatched_quantity - quantity;
+
+		if (unmatchedQuantity === 0) {
+			const { payoutTxSqlPayload, profit, platformCommission } = await _getSellPayoutTxSqlPayload(sql, {
+				userId: bet.user_id as string,
+				sellBet: bet,
+				event
+			});
+
+			insertBetSellTxSqlPayload = payoutTxSqlPayload;
+			bet = {
+				...bet,
+				profit,
+				platform_commission: platformCommission
+			};
+		}
+	} else {
+		counterBet = {
+			option_id: otherOption.id,
+			price_per_quantity: event.win_price - bet.price_per_quantity,
+			...commonBetBody
+		};
+	}
+
+	const insertMatchedBetSqlPayload: InsertMatchedBetSqlPayload = {
+		bet_id: bet.id,
+		matched_bet_id: commonBetBody.id,
+		quantity
+	};
+
+	const updateBetSqlPayload = {
+		profit: bet.profit,
+		platform_commission: bet.platform_commission,
+		unmatched_quantity: bet.unmatched_quantity - quantity,
+		updated_at: new Date()
+	};
+
+	await sql`INSERT INTO "event".bet ${sql(counterBet)}`;
+	await sql`UPDATE "event".bet
+            SET ${sql(updateBetSqlPayload)}
+            WHERE id = ${bet.id}`;
+	await sql`INSERT INTO "event".matched ${sql(insertMatchedBetSqlPayload)}`;
+	insertBetSellTxSqlPayload && (await sql`INSERT INTO "wallet".transaction ${sql(insertBetSellTxSqlPayload)}`);
+
+	return {
+		...counterBet,
+		type: BetType.Values.sell,
+		unmatched_quantity: quantity,
+		sold_quantity: null,
+		buy_bet_id: counterBet.id
+	};
+};
+
+const _matchWithLiquidityEngine = async (bet: Bet) => {
+	await db.sql.begin(async (sql) => {
+		const event = await _validateEvent(sql, bet.event_id);
+
+		if (bet.price_per_quantity > event.platform_liquidity_left) return;
+		const liquidityMatchableQuantity = Math.floor(event.platform_liquidity_left / bet.price_per_quantity);
+		const { selectedOption, otherOption } = await _validateOption(event.id, bet.option_id);
+
+		const counterSellBet = await _placeCounterLiquidityBet(sql, {
+			bet,
+			event,
+			selectedOption,
+			otherOption,
+			quantity: liquidityMatchableQuantity
+		});
+	});
+};
+
+const liquidityEngine = async () => {
+	const bets = await _getLiquidityMatchableBets();
+
+	for (const bet of bets) {
+		await _matchWithLiquidityEngine(bet);
+	}
+};
+
+setInterval(liquidityEngine, 20 * 1000);
 
 setInterval(async () => {
 	await db.sql`

@@ -138,7 +138,9 @@ const Bet = builder.objectRef<EventService.Bet>("Bet").implement({
 		userId: t.exposeString("user_id", { nullable: true }),
 		pricePerQuantity: t.exposeFloat("price_per_quantity"),
 		quantity: t.exposeInt("quantity"),
-		rewardAmountUsed: t.exposeFloat("reward_amount_used"),
+		rewardAmountUsed: t.exposeFloat("reward_amount_used", {
+			authScopes: { admin: true }
+		}),
 		unmatchedQuantity: t.exposeInt("unmatched_quantity"),
 		type: t.field({
 			type: BetTypeEnum,
