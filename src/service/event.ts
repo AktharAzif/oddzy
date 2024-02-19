@@ -160,7 +160,10 @@ type GetSellPayoutTxSqlPayload = {
 type MatchOrdersPayload = {
 	event: Event;
 	betId: string;
-	unmatchedOrders: Bet[];
+	selectedOption: Option;
+	otherOption: Option;
+	type: BetType;
+	price: number;
 	quantity: number;
 };
 
@@ -500,7 +503,18 @@ const _getSellPayoutTxSqlPayload = ({ sellBet, buyBet, event, userId }: GetSellP
 	return { payoutTxSqlPayload, profit, platformCommission };
 };
 
-const _matchOrders = async (sql: TransactionSql, { event, betId, unmatchedOrders, quantity }: MatchOrdersPayload) => {
+const _matchOrders = async (sql: TransactionSql, { event, betId, selectedOption, type, otherOption, price, quantity }: MatchOrdersPayload) => {
+	//Ignores the total price returned from the query because it's not used. So that's why Bet is used to parse the result
+	const unmatchedOrders = z.array(Bet).parse(
+		await _getUnmatchedOrders(sql, {
+			event,
+			type,
+			selectedOption,
+			otherOption,
+			price,
+			quantity
+		})
+	);
 	const updateBetSqlPayload: UpdateBetSqlPayload[] = [];
 	const insertMatchedSqlPayload: InsertMatchedSqlPayload[] = [];
 	const insertBetTxSqlPayload: InsertBetTxSqlPayload[] = [];
@@ -629,8 +643,6 @@ const placeBet = async (userId: string, payload: EventSchema.PlaceBetPayload) =>
 	const totalPrice = price * quantity;
 
 	const insertBetTxSqlPayload: InsertBetTxSqlPayload[] = [];
-	const insertMatchedSqlPayload: InsertMatchedSqlPayload[] = [];
-	const updateBetSqlPayload: UpdateBetSqlPayload[] = [];
 
 	let reward_amount_used = 0;
 
@@ -672,28 +684,22 @@ const placeBet = async (userId: string, payload: EventSchema.PlaceBetPayload) =>
 			reward_amount_used = -betTxSqlPayload.reward_amount;
 		} else reward_amount_used = await _validateSellBetAndUpdateBuyBet(sql, { buyBet, quantity, totalPrice });
 
-		//Ignores the total price returned from the query because it's not used. So that's why Bet is used to parse the result
-		const unmatchedOrders = z.array(Bet).parse(
-			await _getUnmatchedOrders(sql, {
-				event,
-				type,
-				selectedOption,
-				otherOption,
-				price,
-				quantity
-			})
-		);
-
-		const { remainingQuantity, ...matchedData } = await _matchOrders(sql, {
+		const {
+			remainingQuantity,
+			updateBetSqlPayload,
+			insertMatchedSqlPayload,
+			insertBetTxSqlPayload: _insertBetTxSqlPayload
+		} = await _matchOrders(sql, {
 			event,
 			betId,
-			unmatchedOrders,
+			selectedOption,
+			otherOption,
+			type,
+			price,
 			quantity
 		});
 
-		updateBetSqlPayload.push(...matchedData.updateBetSqlPayload);
-		insertBetTxSqlPayload.push(...matchedData.insertBetTxSqlPayload);
-		insertMatchedSqlPayload.push(...matchedData.insertMatchedSqlPayload);
+		insertBetTxSqlPayload.push(..._insertBetTxSqlPayload);
 
 		const [bet, insertSellBetTxSqlPayload] = await _getInsertBetTxSqlPayload({
 			userId,
@@ -710,7 +716,7 @@ const placeBet = async (userId: string, payload: EventSchema.PlaceBetPayload) =>
 
 		if (insertSellBetTxSqlPayload) insertBetTxSqlPayload.push(insertSellBetTxSqlPayload);
 
-		await sql`INSERT INTO "event".bet ${sql(bet)}`;
+		const [res] = z.array(Bet).parse(await sql`INSERT INTO "event".bet ${sql(bet)}`);
 
 		if (updateBetSqlPayload.length) {
 			const payload = updateBetSqlPayload.map(({ id, unmatched_quantity, profit, platform_commission }) => [id, unmatched_quantity, profit, platform_commission]);
@@ -733,7 +739,7 @@ const placeBet = async (userId: string, payload: EventSchema.PlaceBetPayload) =>
 
 		insertBetTxSqlPayload.length && (await sql`INSERT INTO "wallet".transaction ${sql(insertBetTxSqlPayload)}`);
 		insertMatchedSqlPayload.length && (await sql`INSERT INTO "event".matched ${sql(insertMatchedSqlPayload)}`);
-		return bet;
+		return res;
 	});
 };
 
