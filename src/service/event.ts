@@ -74,15 +74,15 @@ const Bet = z.object({
 	event_id: z.string(),
 	user_id: z.string().nullable(),
 	option_id: z.coerce.number().int(),
-	quantity: z.coerce.number(),
+	quantity: z.coerce.number().int(),
 	price_per_quantity: z.coerce.number(),
 	reward_amount_used: z.coerce.number(),
-	unmatched_quantity: z.coerce.number(),
+	unmatched_quantity: z.coerce.number().int(),
 	type: BetType,
 	buy_bet_id: z.string().nullable(),
 	profit: z.coerce.number().nullable(),
 	platform_commission: z.coerce.number().nullable(),
-	sold_quantity: z.coerce.number().nullable(),
+	sold_quantity: z.coerce.number().int().nullable(),
 	created_at: z.date(),
 	updated_at: z.date()
 });
@@ -361,7 +361,7 @@ const updateOptions = async (payload: EventSchema.UpdateEventOptionPayload): Pro
 	return z.array(Option).parse(res);
 };
 
-const _buyBetValidation = async (sql: TransactionSql, { userId, event, selectedOption, buyBetId }: BuyBetValidationPayload) =>
+const _buyBetValidation = (sql: TransactionSql, { userId, event, selectedOption, buyBetId }: BuyBetValidationPayload) =>
 	sql`
       SELECT *
       FROM "event".bet
@@ -659,7 +659,7 @@ const placeBet = async (userId: string, payload: EventSchema.PlaceBetPayload) =>
 		if (event.frozen) throw new ErrorUtil.HttpException(400, "Betting is locked for this event.");
 		if (event.win_price < price) throw new ErrorUtil.HttpException(400, "Price is higher than win price.");
 
-		//Fetching buy bet if it is a sell bet to validate the quantity. Casting buy_bet_id as string because it's already validated in the graphql resolver
+		//Fetching buy bet if the order is a sell bet to validate the quantity. Casting buy_bet_id as string because it's already validated in the graphql resolver
 		const [buyBet] = z.array(Bet).parse(
 			type === "sell"
 				? await _buyBetValidation(sql, {
