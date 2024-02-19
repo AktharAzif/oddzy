@@ -2,9 +2,11 @@ import { builder } from "../../config";
 import { EventService } from "../../service";
 
 const EventStatusEnum = builder.enumType("EventStatusEnum", {
-	values: EventService.EventStatus
+	values: EventService.EventStatus.options
 });
 
-type EventStatusEnum = typeof EventStatusEnum.$inferType;
+const BetTypeEnum = builder.enumType("BetTypeEnum", {
+	values: EventService.BetType.options
+});
 
-export { EventStatusEnum };
+export { BetTypeEnum, EventStatusEnum };

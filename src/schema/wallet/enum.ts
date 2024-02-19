@@ -2,14 +2,11 @@ import { builder } from "../../config";
 import { WalletService } from "../../service";
 
 const TokenEnum = builder.enumType("TokenEnum", {
-	values: WalletService.Token
+	values: WalletService.Token.options
 });
 
 const ChainEnum = builder.enumType("ChainEnum", {
-	values: WalletService.Chain
+	values: WalletService.Chain.options
 });
-
-type TokenEnum = typeof TokenEnum.$inferType;
-type ChainEnum = typeof ChainEnum.$inferType;
 
 export { ChainEnum, TokenEnum };

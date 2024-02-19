@@ -1,5 +1,6 @@
 import SchemaBuilder from "@pothos/core";
 import ScopeAuthPlugin from "@pothos/plugin-scope-auth";
+import ValidationPlugin from "@pothos/plugin-validation";
 import { DateTimeResolver } from "graphql-scalars";
 
 const builder = new SchemaBuilder<{
@@ -18,7 +19,7 @@ const builder = new SchemaBuilder<{
 		admin: boolean;
 	};
 }>({
-	plugins: [ScopeAuthPlugin],
+	plugins: [ScopeAuthPlugin, ValidationPlugin],
 	authScopes: async ({ admin }) => ({
 		admin
 	})
