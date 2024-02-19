@@ -729,7 +729,7 @@ const placeBet = async (userId: string, payload: EventSchema.PlaceBetPayload) =>
 
 		if (insertSellBetTxSqlPayload) insertBetTxSqlPayload.push(insertSellBetTxSqlPayload);
 
-		const [res] = z.array(Bet).parse(await sql`INSERT INTO "event".bet ${sql(bet)}`);
+		const res = Bet.parse((await sql`INSERT INTO "event".bet ${sql(bet)} RETURNING *`)[0]);
 
 		if (updateBetSqlPayload.length) {
 			const payload = updateBetSqlPayload.map(({ id, unmatched_quantity, profit, platform_commission }) => [id, unmatched_quantity, profit, platform_commission]);
@@ -752,6 +752,7 @@ const placeBet = async (userId: string, payload: EventSchema.PlaceBetPayload) =>
 
 		insertBetTxSqlPayload.length && (await sql`INSERT INTO "wallet".transaction ${sql(insertBetTxSqlPayload)}`);
 		insertMatchedBetSqlPayload.length && (await sql`INSERT INTO "event".matched ${sql(insertMatchedBetSqlPayload)}`);
+
 		return res;
 	});
 };
@@ -878,7 +879,7 @@ const liquidityEngine = async () => {
 	}
 };
 
-setInterval(liquidityEngine, 20 * 1000);
+// setInterval(liquidityEngine, 20 * 1000);
 
 setInterval(async () => {
 	await db.sql`
