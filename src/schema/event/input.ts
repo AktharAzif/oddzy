@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { builder } from "../../config";
-import { WalletService } from "../../service";
+import { EventService, WalletService } from "../../service";
 
 const CreateOrUpdateCategoryPayload = z.object({
 	id: z.number().nullish(),
@@ -38,7 +38,7 @@ const CreateEventPayload = z
 		maxLiquidityPercentage: z.number(),
 		liquidityInBetween: z.boolean(),
 		platformFeesPercentage: z.number(),
-		winPrice: z.number(),
+		winPrice: z.number().positive(),
 		slippage: z.number(),
 		token: WalletService.Token,
 		chain: WalletService.Chain,
@@ -57,7 +57,8 @@ const CreateEventPayload = z
 					return option.reduce((acc, curr) => acc + curr.odds, 0) === 100;
 				},
 				{
-					message: "Odds must add up to 100"
+					message: "Odds must add up to 100",
+					path: ["option"]
 				}
 			),
 		source: z.array(
@@ -68,15 +69,17 @@ const CreateEventPayload = z
 		)
 	})
 	.refine(({ startAt, endAt }) => startAt < endAt, {
-		message: "Start date must be less than end date"
+		message: "Start date must be less than end date",
+		path: ["startAt", "endAt"]
 	})
 	.refine(({ token, chain }) => WalletService.TokenCombination.some((item) => item.token === token && item.chain === chain), {
-		message: "Invalid token and chain combination. Allowed combinations are: " + WalletService.TokenCombination.map((item) => `${item.token} - ${item.chain}`).join(", ")
+		message: "Invalid token and chain combination. Allowed combinations are: " + WalletService.TokenCombination.map((item) => `${item.token} - ${item.chain}`).join(", "),
+		path: ["token", "chain"]
 	});
 type CreateEventPayload = z.infer<typeof CreateEventPayload>;
 
 const UpdateEventSourcePayload = z.object({
-	id: z.number(),
+	id: z.number().int(),
 	name: z.string(),
 	url: z.string().url()
 });
@@ -96,7 +99,7 @@ const UpdateEventOptionPayload = z.object({
 	option: z
 		.array(
 			z.object({
-				id: z.number(),
+				id: z.number().int(),
 				name: z.string(),
 				imageUrl: z.string().url().nullish(),
 				odds: z.number().min(0).max(100)
@@ -104,9 +107,34 @@ const UpdateEventOptionPayload = z.object({
 		)
 		.length(2)
 		.refine((option) => option.reduce((acc, curr) => acc + curr.odds, 0) === 100, {
-			message: "Odds must be between 0 and 100"
+			message: "Odds must add up to 100",
+			path: ["option"]
 		})
 });
 type UpdateEventOptionPayload = z.infer<typeof UpdateEventOptionPayload>;
 
-export { CreateEventOptionInput, CreateEventSourceInput, UpdateEventOptionInput, UpdateEventOptionPayload, CreateOrUpdateCategoryPayload, CreateEventPayload, UpdateEventSourcePayload };
+const PlaceBetPayload = z
+	.object({
+		eventId: z.string(),
+		optionId: z.number().int(),
+		price: z.number().positive(),
+		quantity: z.number().int().min(1),
+		type: EventService.BetType,
+		buyBetId: z.string().nullish()
+	})
+	.refine(({ type, buyBetId }) => !(type === "sell" && !buyBetId), {
+		message: "buyBetId is required for sell bet",
+		path: ["buyBetId"]
+	});
+type PlaceBetPayload = z.infer<typeof PlaceBetPayload>;
+
+export {
+	CreateEventOptionInput,
+	CreateEventSourceInput,
+	UpdateEventOptionInput,
+	UpdateEventOptionPayload,
+	CreateOrUpdateCategoryPayload,
+	CreateEventPayload,
+	UpdateEventSourcePayload,
+	PlaceBetPayload
+};

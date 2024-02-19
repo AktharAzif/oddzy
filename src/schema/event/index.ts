@@ -2,8 +2,18 @@ import { builder } from "../../config";
 import { EventService } from "../../service";
 import { getPagination } from "../../util";
 import { ChainEnum, TokenEnum } from "../wallet";
-import { CreateEventOptionInput, CreateEventPayload, CreateEventSourceInput, CreateOrUpdateCategoryPayload, UpdateEventOptionInput, UpdateEventOptionPayload, UpdateEventSourcePayload } from "./input";
-import { Category, Event, Option, Source } from "./object";
+import { BetTypeEnum } from "./enum.ts";
+import {
+	CreateEventOptionInput,
+	CreateEventPayload,
+	CreateEventSourceInput,
+	CreateOrUpdateCategoryPayload,
+	PlaceBetPayload,
+	UpdateEventOptionInput,
+	UpdateEventOptionPayload,
+	UpdateEventSourcePayload
+} from "./input";
+import { Bet, Category, Event, Option, Source } from "./object";
 
 builder.queryField("getCategory", (t) =>
 	t.field({
@@ -187,33 +197,25 @@ builder.mutationField("updateOptions", (t) =>
 	})
 );
 
-// Bets
+builder.mutationField("placeBet", (t) =>
+	t.field({
+		type: Bet,
+		args: {
+			eventId: t.arg.string({ required: true }),
+			optionId: t.arg.int({ required: true }),
+			price: t.arg.float({ required: true }),
+			quantity: t.arg.int({ required: true }),
+			type: t.arg({
+				type: BetTypeEnum,
+				required: true
+			}),
+			buyBetId: t.arg.string()
+		},
+		validate: {
+			schema: PlaceBetPayload
+		},
+		resolve: async (_, arg) => await EventService.placeBet("b7g7cy6louugeskg4svis6kj", arg)
+	})
+);
 
-// builder.mutationField("placeBet", (t) =>
-// 	t.field({
-// 		type: "Boolean",
-// 		args: {
-// 			eventId: t.arg.string({ required: true }),
-// 			optionId: t.arg.int({ required: true }),
-// 			price: t.arg.float({ required: true, validate: { positive: true } }),
-// 			quantity: t.arg.int({ required: true, validate: { min: 1 } }),
-// 			type: t.arg({
-// 				type: BetTypeEnum,
-// 				required: true
-// 			}),
-// 			buyBetId: t.arg.string()
-// 		},
-// 		validate: [
-// 			({ type, buyBetId }) => (type === "sell" && !buyBetId ? false : true),
-// 			{
-// 				message: "Buy bet id is required for sell bet"
-// 			}
-// 		],
-// 		resolve: async (_, arg) => {
-// 			await EventService.placeBet("b7g7cy6louugeskg4svis6kj", arg);
-// 			return true;
-// 		}
-// 	})
-// );
-
-export type { CreateEventPayload, CreateOrUpdateCategoryPayload, UpdateEventOptionPayload, UpdateEventSourcePayload };
+export type { CreateEventPayload, CreateOrUpdateCategoryPayload, UpdateEventOptionPayload, UpdateEventSourcePayload, PlaceBetPayload };

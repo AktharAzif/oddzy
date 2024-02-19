@@ -1,7 +1,7 @@
 import { WalletSchema } from "..";
 import { builder } from "../../config";
 import { EventService } from "../../service";
-import { EventStatusEnum } from "./enum.ts";
+import { BetTypeEnum, EventStatusEnum } from "./enum.ts";
 
 const Category = builder.objectRef<EventService.Category>("Category").implement({
 	fields: (t) => ({
@@ -130,4 +130,35 @@ const Option = builder.objectRef<EventService.Option>("Option").implement({
 	})
 });
 
-export { Category, Event, Option, Source };
+const Bet = builder.objectRef<EventService.Bet>("Bet").implement({
+	fields: (t) => ({
+		id: t.exposeString("id"),
+		eventId: t.exposeString("event_id"),
+		optionId: t.exposeInt("option_id"),
+		userId: t.exposeString("user_id", { nullable: true }),
+		pricePerQuantity: t.exposeFloat("price_per_quantity"),
+		quantity: t.exposeInt("quantity"),
+		rewardAmountUsed: t.exposeFloat("reward_amount_used"),
+		unmatchedQuantity: t.exposeInt("unmatched_quantity"),
+		type: t.field({
+			type: BetTypeEnum,
+			resolve: (parent) => parent.type
+		}),
+		buyBetId: t.exposeString("buy_bet_id", { nullable: true }),
+		profit: t.exposeFloat("profit", { nullable: true }),
+		platformCommission: t.exposeFloat("platform_commission", { nullable: true }),
+		soldQuantity: t.exposeInt("sold_quantity", { nullable: true }),
+		createdAt: t.field({
+			authScopes: { admin: true },
+			type: "Date",
+			resolve: (parent) => parent.created_at
+		}),
+		updatedAt: t.field({
+			authScopes: { admin: true },
+			type: "Date",
+			resolve: (parent) => parent.updated_at
+		})
+	})
+});
+
+export { Category, Event, Option, Source, Bet };
