@@ -1,6 +1,6 @@
 import { WalletSchema } from "..";
 import { builder } from "../../config";
-import { EventService } from "../../service";
+import { BetService, EventService } from "../../service";
 import { BetTypeEnum, EventStatusEnum } from "./enum.ts";
 
 const Category = builder.objectRef<EventService.Category>("Category").implement({
@@ -130,35 +130,35 @@ const Option = builder.objectRef<EventService.Option>("Option").implement({
 	})
 });
 
-const Bet = builder.objectRef<EventService.Bet>("Bet").implement({
+const Bet = builder.objectRef<BetService.Bet>("Bet").implement({
 	fields: (t) => ({
 		id: t.exposeString("id"),
-		eventId: t.exposeString("event_id"),
-		optionId: t.exposeInt("option_id"),
-		userId: t.exposeString("user_id", { nullable: true }),
-		pricePerQuantity: t.exposeFloat("price_per_quantity"),
+		eventId: t.exposeString("eventId"),
+		optionId: t.exposeInt("optionId"),
+		userId: t.exposeString("userId", { nullable: true }),
+		pricePerQuantity: t.exposeFloat("pricePerQuantity"),
 		quantity: t.exposeInt("quantity"),
-		rewardAmountUsed: t.exposeFloat("reward_amount_used", {
+		rewardAmountUsed: t.exposeFloat("rewardAmountUsed", {
 			authScopes: { admin: true }
 		}),
-		unmatchedQuantity: t.exposeInt("unmatched_quantity"),
+		unmatchedQuantity: t.exposeInt("unmatchedQuantity"),
 		type: t.field({
 			type: BetTypeEnum,
 			resolve: (parent) => parent.type
 		}),
-		buyBetId: t.exposeString("buy_bet_id", { nullable: true }),
+		buyBetId: t.exposeString("buyBetId", { nullable: true }),
 		profit: t.exposeFloat("profit", { nullable: true }),
-		platformCommission: t.exposeFloat("platform_commission", { nullable: true }),
-		soldQuantity: t.exposeInt("sold_quantity", { nullable: true }),
+		platformCommission: t.exposeFloat("platformCommission", { nullable: true }),
+		soldQuantity: t.exposeInt("soldQuantity", { nullable: true }),
 		createdAt: t.field({
 			authScopes: { admin: true },
 			type: "Date",
-			resolve: (parent) => parent.created_at
+			resolve: (parent) => parent.createdAt
 		}),
 		updatedAt: t.field({
 			authScopes: { admin: true },
 			type: "Date",
-			resolve: (parent) => parent.updated_at
+			resolve: (parent) => parent.updatedAt
 		})
 	})
 });

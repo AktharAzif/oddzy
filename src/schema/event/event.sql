@@ -146,6 +146,15 @@ CREATE TABLE
     "updated_at"     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+
+CREATE TABLE IF NOT EXISTS "event".bet_queue
+(
+    "bet_id"   CHAR(24) PRIMARY KEY REFERENCES "event".bet (id),
+    "event_id" CHAR(24) REFERENCES "event".event (id),
+    --created_at is duplicated from bet table to avoid join with bet table. This table is frequently queried. So, this is a performance optimization.
+    CREATED_AT TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 --FUNCTIONS
 CREATE OR REPLACE FUNCTION "event".fn_update_event_status_log() RETURNS TRIGGER
     LANGUAGE PLPGSQL AS

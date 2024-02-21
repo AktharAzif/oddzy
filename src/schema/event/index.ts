@@ -1,9 +1,10 @@
 import { builder } from "../../config";
-import { EventService } from "../../service";
+import { BetService, EventService } from "../../service";
 import { getPagination } from "../../util";
 import { ChainEnum, TokenEnum } from "../wallet";
 import { BetTypeEnum } from "./enum.ts";
 import {
+	CancelBetPayload,
 	CreateEventOptionInput,
 	CreateEventPayload,
 	CreateEventSourceInput,
@@ -214,8 +215,23 @@ builder.mutationField("placeBet", (t) =>
 		validate: {
 			schema: PlaceBetPayload
 		},
-		resolve: async (_, arg) => await EventService.placeBet("b7g7cy6louugeskg4svis6kj", arg)
+		resolve: async (_, arg) => await BetService.placeBet("b7g7cy6louugeskg4svis6ku", arg)
 	})
 );
 
-export type { CreateEventPayload, CreateOrUpdateCategoryPayload, UpdateEventOptionPayload, UpdateEventSourcePayload, PlaceBetPayload };
+builder.mutationField("cancelBet", (t) =>
+	t.field({
+		type: Bet,
+		args: {
+			id: t.arg.string({ required: true }),
+			quantity: t.arg.int({ required: true }),
+			eventId: t.arg.string({ required: true })
+		},
+		validate: {
+			schema: CancelBetPayload
+		},
+		resolve: async (_, arg) => await BetService.cancelBet("b7g7cy6louugeskg4svis6ku", arg)
+	})
+);
+
+export type { CreateEventPayload, CreateOrUpdateCategoryPayload, CancelBetPayload, UpdateEventOptionPayload, UpdateEventSourcePayload, PlaceBetPayload };

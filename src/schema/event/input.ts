@@ -128,6 +128,13 @@ const PlaceBetPayload = z
 	});
 type PlaceBetPayload = z.infer<typeof PlaceBetPayload>;
 
+const CancelBetPayload = z.object({
+	id: z.string(),
+	eventId: z.string(),
+	quantity: z.number().int().min(1)
+});
+type CancelBetPayload = z.infer<typeof CancelBetPayload>;
+
 export {
 	CreateEventOptionInput,
 	CreateEventSourceInput,
@@ -136,5 +143,6 @@ export {
 	CreateOrUpdateCategoryPayload,
 	CreateEventPayload,
 	UpdateEventSourcePayload,
-	PlaceBetPayload
+	PlaceBetPayload,
+	CancelBetPayload
 };

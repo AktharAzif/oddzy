@@ -1,7 +1,9 @@
 CREATE SCHEMA IF NOT EXISTS "wallet";
 
 --TYPES
-CREATE TYPE "wallet".transaction_for AS ENUM ('deposit', 'withdraw', 'bet');
+CREATE TYPE "wallet".transaction_for AS ENUM ('deposit', 'withdraw', 'bet', 'bet_win', 'bet_cancel');
+
+
 
 CREATE TYPE "wallet".transaction_status AS ENUM ('pending', 'completed');
 
