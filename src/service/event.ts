@@ -54,6 +54,8 @@ const Event = z.object({
 	endAt: z.date(),
 	frozen: z.boolean(),
 	optionWon: z.coerce.number().int().nullable(),
+	resolved: z.boolean(),
+	resolvedAt: z.date().nullable(),
 	platformLiquidityLeft: z.coerce.number(),
 	minLiquidityPercentage: z.coerce.number(),
 	maxLiquidityPercentage: z.coerce.number(),

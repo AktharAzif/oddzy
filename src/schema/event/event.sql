@@ -104,22 +104,25 @@ CREATE TABLE
 CREATE TABLE
     IF NOT EXISTS "event".bet
 (
-    "id"                      CHAR(24) PRIMARY KEY,
-    "event_id"                CHAR(24)         NOT NULL REFERENCES "event".event (id),
-    "user_id"                 CHAR(24)         NOT NULL REFERENCES "user".user (id),
-    "option_id"               INTEGER          NOT NULL REFERENCES "event".option (id),
-    "quantity"                INT              NOT NULL,
-    "price_per_quantity"      DECIMAL          NOT NULL,
-    "unmatched_reward_amount" DECIMAL          NOT NULL,
-    "matched_quantity"        INT              NOT NULL,
-    "type"                    "event".bet_type NOT NULL,
-    "buy_bet_id"              CHAR(24),
-    "reward_amount_used"      DECIMAL          NOT NULL,
-    "profit"                  DECIMAL,
-    "platform_commission"     DECIMAL,
-    "sold_quantity"           INT,
-    "created_at"              TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
-    "updated_at"              TIMESTAMPTZ      NOT NULL DEFAULT NOW()
+    "id"                         CHAR(24) PRIMARY KEY,
+    "event_id"                   CHAR(24)         NOT NULL REFERENCES "event".event (id),
+    "user_id"                    CHAR(24)         NOT NULL REFERENCES "user".user (id),
+    "option_id"                  INTEGER          NOT NULL REFERENCES "event".option (id),
+    "quantity"                   INT              NOT NULL,
+    "price_per_quantity"         DECIMAL          NOT NULL,
+    "unmatched_reward_amount"    DECIMAL          NOT NULL,
+    "matched_quantity"           INT              NOT NULL,
+    "type"                       "event".bet_type NOT NULL,
+    "buy_bet_id"                 CHAR(24) REFERENCES "event".bet (id),
+    "resolved"                   BOOLEAN          NOT NULL DEFAULT false,
+    "resolved_at"                TIMESTAMPTZ,
+    "buy_bet_price_per_quantity" DECIMAL, --Adding this column to avoid join for calculating profit.
+    "reward_amount_used"         DECIMAL          NOT NULL,
+    "profit"                     DECIMAL,
+    "platform_commission"        DECIMAL,
+    "sold_quantity"              INT,
+    "created_at"                 TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
+    "updated_at"                 TIMESTAMPTZ      NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_bet_event_id ON event.bet (event_id);
@@ -143,7 +146,7 @@ CREATE TABLE
     "matched_bet_id" CHAR(24)    NOT NULL REFERENCES "event".bet (id),
     "quantity"       INT         NOT NULL,
     "created_at"     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    "updated_at"     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    "updated_at"     TIMESTAMPTZ NOT NULL DEFAULT NOW() --Remove this
 );
 
 
