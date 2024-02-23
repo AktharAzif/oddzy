@@ -91,105 +91,6 @@ const Bet = z.object({
 
 type Bet = z.infer<typeof Bet>;
 
-type InsertBetTxSqlPayload = {
-	id: string;
-	user_id: string;
-	amount: number;
-	reward_amount: number;
-	tx_for: string; //UPDATE TO ENUM
-	tx_status: string;
-	token: WalletService.Token;
-	chain: WalletService.Chain;
-	bet_id: string;
-	bet_quantity: number;
-};
-
-type InsertMatchedBetSqlPayload = {
-	bet_id: string;
-	matched_bet_id: string;
-	quantity: number;
-};
-
-type UpdateBetSqlPayload = {
-	id: string;
-	unmatched_quantity: number;
-	profit: number | null;
-	platform_commission: number | null;
-};
-
-type BuyBetValidationPayload = {
-	userId: string;
-	event: Event;
-	selectedOption: Option;
-	buyBetId: string;
-};
-
-type GetBalancePayload = {
-	userId: string;
-	event: Event;
-};
-
-type CheckBalanceAndReturnBetTxSqlPayload = {
-	userId: string;
-	event: Event;
-	totalPrice: number;
-	betId: string;
-	quantity: number;
-};
-
-type ValidateSellBetAndUpdateBuyBetPayload = {
-	buyBet: Bet;
-	quantity: number;
-	totalPrice: number;
-};
-
-type GetUnmatchedOrdersPayload = {
-	event: Event;
-	type: BetType;
-	selectedOption: Option;
-	otherOption: Option;
-	price: number;
-	quantity: number;
-};
-
-type GetSellPayoutTxSqlPayload = {
-	userId: string;
-	sellBet: Bet;
-	buyBet?: Bet;
-	event: Event;
-};
-
-type MatchOrdersPayload = {
-	event: Event;
-	betId: string;
-	selectedOption: Option;
-	otherOption: Option;
-	type: BetType;
-	price: number;
-	quantity: number;
-};
-
-type GetInsertBetTxSqlPayload = {
-	userId: string;
-	betId: string;
-	option: Option;
-	event: Event;
-	price: number;
-	rewardAmountUsed: number;
-	quantity: number;
-	remainingQuantity: number;
-	type: BetType;
-	buyBet?: Bet;
-};
-
-type PlaceCounterLiquidityBetPayload = {
-	bet: Bet;
-	event: Event;
-	selectedOption: Option;
-	otherOption: Option;
-	quantity: number;
-};
-
 const getEvent = async (sql: TransactionSql | Sql, id: string): Promise<Event> => {
 	const [event] = z.array(Event).parse(
 		await db.sql`SELECT *
@@ -381,17 +282,41 @@ const updateOptions = async (payload: EventSchema.UpdateEventOptionPayload): Pro
 	return z.array(Option).parse(res);
 };
 
-setInterval(async () => {
-	await db.sql`
-      UPDATE "event".event
-      SET status = CASE
-                       WHEN end_at < NOW() THEN 'completed'
-                       WHEN start_at < NOW() THEN 'live'
-                       ELSE status
-          END
-      WHERE status != 'completed';
-	`;
-}, 10 * 1000);
+let changeEventStatusRunning = false;
+const changeEventStatus = async () => {
+	try {
+		//The SQL statement is structured this way, rather than using a single query, to achieve synchronous updates of event statuses with respect to the matching queue.
+		if (changeEventStatusRunning) return;
+		changeEventStatusRunning = true;
+
+		const events = z.array(Event).parse(
+			await db.sql`SELECT *
+                   FROM "event".event
+                   WHERE (NOW() BETWEEN start_at AND end_at AND status != 'live')
+                      OR (end_at < NOW() AND status != 'completed')`
+		);
+
+		for (const event of events) {
+			await db.sql.begin(async (sql) => {
+				await sql`SELECT pg_advisory_xact_lock(hashtext(${event.id}))`;
+				await sql`UPDATE "event".event
+                  SET status = CASE
+                                   WHEN end_at < NOW() THEN 'completed'
+                                   WHEN start_at < NOW() THEN 'live'
+                                   ELSE status
+                      END
+                  WHERE id = ${event.id};`;
+			});
+		}
+
+		changeEventStatusRunning = false;
+	} catch (e) {
+		console.error("Error in changing event status", e);
+		changeEventStatusRunning = false;
+	}
+};
+
+setInterval(changeEventStatus, 5 * 1000);
 
 export {
 	BetType,
