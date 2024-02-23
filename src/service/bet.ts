@@ -198,6 +198,29 @@ const placeBet = async (userId: string, payload: EventSchema.PlaceBetPayload): P
 	});
 };
 
+const getProfitAndCommission = (quantity: number, initialPrice: number, finalPrice: number, platformFees: number) => {
+	const initialPriceTotal = quantity * initialPrice;
+	const finalPriceTotal = quantity * finalPrice;
+
+	const earned = finalPriceTotal - initialPriceTotal;
+	const commission = earned > 0 ? (finalPriceTotal * platformFees) / 100 : 0;
+	const profit = earned - commission < 0 ? earned : earned - commission;
+	const platformCommission = profit === earned ? 0 : commission;
+	const amount = finalPriceTotal - platformCommission;
+
+	return { amount, profit, platformCommission };
+};
+
+const getSellPayoutTxSqlPayload = (event: Event, sellBet: Bet) => {
+	//sellBet will always have butBetPricePerQuantity as number because it's a sell bet. So, casting it as number
+	const { amount: _amount, profit, platformCommission } = getProfitAndCommission(sellBet.quantity, sellBet.buyBetPricePerQuantity as number, sellBet.pricePerQuantity, event.platformFeesPercentage);
+	const amount = _amount - sellBet.rewardAmountUsed;
+
+	const payoutTxSqlPayload = generateTxSqlPayload(sellBet.userId as string, "bet", amount, sellBet.rewardAmountUsed, event.token, event.chain, null, "completed", sellBet.id, sellBet.quantity);
+
+	return { payoutTxSqlPayload, profit, platformCommission };
+};
+
 const getCancelBetSqlPayload = (bet: Bet, event: Event, quantity: number) => {
 	const totalCancelAmount = bet.pricePerQuantity * quantity;
 	const totalAmount = bet.pricePerQuantity * bet.quantity - bet.rewardAmountUsed;
@@ -236,34 +259,35 @@ const getCancelBetSqlPayload = (bet: Bet, event: Event, quantity: number) => {
 		};
 
 		const unmatchedQuantity = bet.unmatchedQuantity - quantity;
+		if (bet.userId && unmatchedQuantity === 0) {
+			if (updateBetSqlPayload.quantity) {
+				const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, {
+					...bet,
+					quantity: updateBetSqlPayload.quantity
+				});
 
-		if (unmatchedQuantity === 0 && bet.userId && updateBetSqlPayload.quantity) {
-			const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, {
-				...bet,
-				quantity: updateBetSqlPayload.quantity
-			});
+				txSqlPayload = payoutTxSqlPayload;
 
-			txSqlPayload = payoutTxSqlPayload;
-
-			return {
-				updateBetSqlPayload: {
-					...updateBetSqlPayload,
-					profit,
-					platformCommission
-				},
-				txSqlPayload,
-				updateBuyBetSqlPayload
-			};
-		} else if (!updateBetSqlPayload.quantity) {
-			return {
-				updateBetSqlPayload: {
-					...updateBetSqlPayload,
-					profit: 0,
-					platformCommission: 0
-				},
-				txSqlPayload,
-				updateBuyBetSqlPayload
-			};
+				return {
+					updateBetSqlPayload: {
+						...updateBetSqlPayload,
+						profit,
+						platformCommission
+					},
+					txSqlPayload,
+					updateBuyBetSqlPayload
+				};
+			} else {
+				return {
+					updateBetSqlPayload: {
+						...updateBetSqlPayload,
+						profit: 0,
+						platformCommission: 0
+					},
+					txSqlPayload,
+					updateBuyBetSqlPayload
+				};
+			}
 		}
 	}
 
@@ -376,28 +400,10 @@ const getUnmatchedOrdersForAdmin = async (sql: TransactionSql, event: Event, pri
 		`
 	);
 
-const getProfitAndCommission = (quantity: number, initialPrice: number, finalPrice: number, platformFees: number) => {
-	const initialPriceTotal = quantity * initialPrice;
-	const finalPriceTotal = quantity * finalPrice;
-
-	const earned = finalPriceTotal - initialPriceTotal;
-	const commission = earned > 0 ? (finalPriceTotal * platformFees) / 100 : 0;
-	const profit = earned - commission < 0 ? earned : earned - commission;
-	const platformCommission = profit === earned ? 0 : commission;
-	const amount = finalPriceTotal - platformCommission;
-
-	return { amount, profit, platformCommission };
-};
-
-const getSellPayoutTxSqlPayload = (event: Event, sellBet: Bet) => {
-	//sellBet will always have butBetPricePerQuantity as number because it's a sell bet. So, casting it as number
-	const { amount: _amount, profit, platformCommission } = getProfitAndCommission(sellBet.quantity, sellBet.buyBetPricePerQuantity as number, sellBet.pricePerQuantity, event.platformFeesPercentage);
-	const amount = _amount - sellBet.rewardAmountUsed;
-
-	const payoutTxSqlPayload = generateTxSqlPayload(sellBet.userId as string, "bet", amount, sellBet.rewardAmountUsed, event.token, event.chain, null, "completed", sellBet.id, sellBet.quantity);
-
-	return { payoutTxSqlPayload, profit, platformCommission };
-};
+const removeBetFromQueue = async (sql: TransactionSql, betId: string) =>
+	sql`DELETE
+      FROM "event".bet_queue
+      WHERE bet_id = ${betId}`;
 
 const matchOrder = async (betId: string, eventId: string) => {
 	const insertMatchedBetSqlPayload: {
@@ -432,7 +438,10 @@ const matchOrder = async (betId: string, eventId: string) => {
 		const { optionId, unmatchedQuantity, type, pricePerQuantity } = bet;
 		const event = await getEvent(sql, eventId);
 		//Matching still works event if is frozen. But it will stop matching when event status is changed completed
-		if (event.status === "completed") return;
+		if (event.status === "completed") {
+			await removeBetFromQueue(sql, betId);
+			return;
+		}
 		const { selectedOption, otherOption } = await validateOption(eventId, optionId);
 
 		const unmatchedOrders = bet.userId
@@ -496,9 +505,7 @@ const matchOrder = async (betId: string, eventId: string) => {
 		insertMatchedBetSqlPayload.length && (await sql`INSERT INTO "event".matched ${sql(insertMatchedBetSqlPayload)}`);
 		insertSellPayoutTxSqlPayload.length && (await sql`INSERT INTO "wallet".transaction ${sql(insertSellPayoutTxSqlPayload)}`);
 
-		await sql`DELETE
-              FROM "event".bet_queue
-              WHERE bet_id = ${betId}`;
+		await removeBetFromQueue(sql, betId);
 	});
 };
 
