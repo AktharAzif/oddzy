@@ -399,6 +399,151 @@ const getSellPayoutTxSqlPayload = (event: Event, sellBet: Bet) => {
 	return { payoutTxSqlPayload, profit, platformCommission };
 };
 
+const matchOrder = async (betId: string, eventId: string) => {
+	const insertMatchedBetSqlPayload: {
+		betId: string;
+		matchedBetId: string;
+		quantity: number;
+		createAt: Date;
+	}[] = [];
+
+	const insertSellPayoutTxSqlPayload: Transaction[] = [];
+
+	const updateBetSqlPayload: {
+		id: string;
+		unmatchedQuantity: number;
+		profit: number | null;
+		platformCommission: number | null;
+		updateAt: Date;
+	}[] = [];
+
+	const addUpdateBetSqlPayload = (betId: string, unmatchedQuantity: number, profit: number | null = null, platformCommission: number | null = null) =>
+		updateBetSqlPayload.push({
+			id: betId,
+			unmatchedQuantity,
+			profit,
+			platformCommission,
+			updateAt: new Date()
+		});
+
+	await db.sql.begin(async (sql) => {
+		await sql`SELECT pg_advisory_xact_lock(hashtext(${eventId}))`;
+		const bet = await getBet(sql, betId);
+		const { optionId, unmatchedQuantity, type, pricePerQuantity } = bet;
+		const event = await getEvent(sql, eventId);
+		//Matching still works event if is frozen. But it will stop matching when event status is changed completed
+		if (event.status === "completed") return;
+		const { selectedOption, otherOption } = await validateOption(eventId, optionId);
+
+		const unmatchedOrders = bet.userId
+			? await getUnmatchedOrders(sql, event, type, pricePerQuantity, unmatchedQuantity, selectedOption.id, otherOption.id)
+			: await getUnmatchedOrdersForAdmin(sql, event, pricePerQuantity, unmatchedQuantity, selectedOption.id);
+		let remainingQuantity = unmatchedQuantity;
+
+		for (const order of unmatchedOrders) {
+			if (remainingQuantity === 0) break;
+
+			const matchedQuantity = remainingQuantity < order.unmatchedQuantity ? remainingQuantity : order.unmatchedQuantity;
+			remainingQuantity -= matchedQuantity;
+
+			insertMatchedBetSqlPayload.push({
+				betId: betId,
+				matchedBetId: order.id,
+				quantity: matchedQuantity,
+				createAt: new Date()
+			});
+
+			const unmatchedQuantity = order.unmatchedQuantity - matchedQuantity;
+
+			if (order.type === "sell" && unmatchedQuantity === 0 && order.userId) {
+				const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, order);
+
+				addUpdateBetSqlPayload(order.id, unmatchedQuantity, profit, platformCommission);
+				insertSellPayoutTxSqlPayload.push(payoutTxSqlPayload);
+			} else {
+				addUpdateBetSqlPayload(order.id, unmatchedQuantity);
+			}
+		}
+
+		if (remainingQuantity === 0 && bet.type === "sell" && bet.userId) {
+			const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, bet);
+
+			addUpdateBetSqlPayload(bet.id, remainingQuantity, profit, platformCommission);
+			insertSellPayoutTxSqlPayload.push(payoutTxSqlPayload);
+		} else if (unmatchedQuantity !== remainingQuantity) {
+			addUpdateBetSqlPayload(bet.id, remainingQuantity);
+		}
+
+		if (updateBetSqlPayload.length) {
+			const payload = updateBetSqlPayload.map(({ id, unmatchedQuantity, profit, platformCommission, updateAt }) => [id, unmatchedQuantity, profit, platformCommission, updateAt]);
+
+			//noinspection SqlResolve
+			updateBetSqlPayload.length &&
+				(await sql`
+          UPDATE "event".bet
+          SET unmatched_quantity  = (update_data.unmatched_quantity)::int,
+              profit              = (update_data.profit)::decimal,
+              platform_commission = (update_data.platform_commission)::decimal,
+              updated_at          = update_data.updated_at
+          FROM (VALUES ${
+						//@ts-ignore
+						sql(payload)
+					}) AS update_data (id, unmatched_quantity, profit, platform_commission, updated_at)
+          WHERE "event".bet.id = update_data.id
+			`);
+		}
+
+		insertMatchedBetSqlPayload.length && (await sql`INSERT INTO "event".matched ${sql(insertMatchedBetSqlPayload)}`);
+		insertSellPayoutTxSqlPayload.length && (await sql`INSERT INTO "wallet".transaction ${sql(insertSellPayoutTxSqlPayload)}`);
+
+		await sql`DELETE
+              FROM "event".bet_queue
+              WHERE bet_id = ${betId}`;
+	});
+};
+
+let runMatchQueueRunning = false;
+const runMatchQueue = async () => {
+	try {
+		if (runMatchQueueRunning) return;
+		runMatchQueueRunning = true;
+
+		const bets = (await db.sql`
+        SELECT *
+        FROM "event".bet_queue
+        ORDER BY created_at
+		`) as [
+			{
+				betId: string;
+				eventId: string;
+			}
+		];
+
+		//@ts-ignore Not implemented in the stable typescript version yet
+		const betsByEvents = Object.groupBy(bets, ({ eventId }) => eventId) as {
+			[eventId: string]: {
+				betId: string;
+				eventId: string;
+			}[];
+		};
+
+		await Promise.all(
+			Object.keys(betsByEvents).map(async (event) => {
+				for (const bet of betsByEvents[event]) {
+					await matchOrder(bet.betId, bet.eventId);
+				}
+			})
+		);
+
+		runMatchQueueRunning = false;
+	} catch (error) {
+		console.error("Error running match queue", error);
+		runMatchQueueRunning = false;
+	}
+};
+
+setInterval(runMatchQueue, 5 * 1000);
+
 //Not using NOT IN BETWEEN because it's not inclusive
 const getLiquidityMatchableBets = async () =>
 	z.array(Bet).parse(
@@ -505,108 +650,25 @@ const matchWithLiquidityEngine = async (bet: Bet) => {
 	});
 };
 
-const matchOrder = async (betId: string, eventId: string) => {
-	const insertMatchedBetSqlPayload: {
-		betId: string;
-		matchedBetId: string;
-		quantity: number;
-		createAt: Date;
-	}[] = [];
+let liquidityEngineRunning = false;
+const liquidityEngine = async () => {
+	try {
+		if (liquidityEngineRunning) return;
+		liquidityEngineRunning = true;
+		const bets = await getLiquidityMatchableBets();
 
-	const insertSellPayoutTxSqlPayload: Transaction[] = [];
-
-	const updateBetSqlPayload: {
-		id: string;
-		unmatchedQuantity: number;
-		profit: number | null;
-		platformCommission: number | null;
-		updateAt: Date;
-	}[] = [];
-
-	const addUpdateBetSqlPayload = (betId: string, unmatchedQuantity: number, profit: number | null = null, platformCommission: number | null = null) =>
-		updateBetSqlPayload.push({
-			id: betId,
-			unmatchedQuantity,
-			profit,
-			platformCommission,
-			updateAt: new Date()
-		});
-
-	await db.sql.begin(async (sql) => {
-		await sql`SELECT pg_advisory_xact_lock(hashtext(${eventId}))`;
-		const bet = await getBet(sql, betId);
-		const { optionId, unmatchedQuantity, type, pricePerQuantity } = bet;
-		const event = await getEvent(sql, eventId);
-		//Matching still works event if is frozen. But it will stop matching when event status is changed completed
-		if (event.status === "completed") return;
-		const { selectedOption, otherOption } = await validateOption(eventId, optionId);
-
-		const unmatchedOrders = bet.userId
-			? await getUnmatchedOrders(sql, event, type, pricePerQuantity, unmatchedQuantity, selectedOption.id, otherOption.id)
-			: await getUnmatchedOrdersForAdmin(sql, event, pricePerQuantity, unmatchedQuantity, selectedOption.id);
-		let remainingQuantity = unmatchedQuantity;
-
-		for (const order of unmatchedOrders) {
-			if (remainingQuantity === 0) break;
-
-			const matchedQuantity = remainingQuantity < order.unmatchedQuantity ? remainingQuantity : order.unmatchedQuantity;
-			remainingQuantity -= matchedQuantity;
-
-			insertMatchedBetSqlPayload.push({
-				betId: betId,
-				matchedBetId: order.id,
-				quantity: matchedQuantity,
-				createAt: new Date()
-			});
-
-			const unmatchedQuantity = order.unmatchedQuantity - matchedQuantity;
-
-			if (order.type === "sell" && unmatchedQuantity === 0 && order.userId) {
-				const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, order);
-
-				addUpdateBetSqlPayload(order.id, unmatchedQuantity, profit, platformCommission);
-				insertSellPayoutTxSqlPayload.push(payoutTxSqlPayload);
-			} else {
-				addUpdateBetSqlPayload(order.id, unmatchedQuantity);
-			}
+		for (const bet of bets) {
+			await matchWithLiquidityEngine(bet);
 		}
 
-		if (remainingQuantity === 0 && bet.type === "sell" && bet.userId) {
-			const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, bet);
-
-			addUpdateBetSqlPayload(bet.id, remainingQuantity, profit, platformCommission);
-			insertSellPayoutTxSqlPayload.push(payoutTxSqlPayload);
-		} else if (unmatchedQuantity !== remainingQuantity) {
-			addUpdateBetSqlPayload(bet.id, remainingQuantity);
-		}
-
-		if (updateBetSqlPayload.length) {
-			const payload = updateBetSqlPayload.map(({ id, unmatchedQuantity, profit, platformCommission, updateAt }) => [id, unmatchedQuantity, profit, platformCommission, updateAt]);
-
-			//noinspection SqlResolve
-			updateBetSqlPayload.length &&
-				(await sql`
-          UPDATE "event".bet
-          SET unmatched_quantity  = (update_data.unmatched_quantity)::int,
-              profit              = (update_data.profit)::decimal,
-              platform_commission = (update_data.platform_commission)::decimal,
-              updated_at          = update_data.updated_at
-          FROM (VALUES ${
-						//@ts-ignore
-						sql(payload)
-					}) AS update_data (id, unmatched_quantity, profit, platform_commission, updated_at)
-          WHERE "event".bet.id = update_data.id
-			`);
-		}
-
-		insertMatchedBetSqlPayload.length && (await sql`INSERT INTO "event".matched ${sql(insertMatchedBetSqlPayload)}`);
-		insertSellPayoutTxSqlPayload.length && (await sql`INSERT INTO "wallet".transaction ${sql(insertSellPayoutTxSqlPayload)}`);
-
-		await sql`DELETE
-              FROM "event".bet_queue
-              WHERE bet_id = ${betId}`;
-	});
+		liquidityEngineRunning = false;
+	} catch (e) {
+		console.error("Error running liquidityEngine", e);
+		liquidityEngineRunning = false;
+	}
 };
+
+setInterval(liquidityEngine, 20 * 1000);
 
 const cancelBets = async (sql: TransactionSql, event: Event, bets: Bet[]) => {
 	if (!bets.length) return;
@@ -808,66 +870,5 @@ const initEventPayout = async () => {
 };
 
 setInterval(initEventPayout, 5 * 1000);
-
-let runMatchQueueRunning = false;
-const runMatchQueue = async () => {
-	try {
-		if (runMatchQueueRunning) return;
-		runMatchQueueRunning = true;
-
-		const bets = (await db.sql`
-        SELECT *
-        FROM "event".bet_queue
-        ORDER BY created_at
-		`) as [
-			{
-				betId: string;
-				eventId: string;
-			}
-		];
-
-		//@ts-ignore Not implemented in the stable typescript version yet
-		const betsByEvents = Object.groupBy(bets, ({ eventId }) => eventId) as {
-			[eventId: string]: {
-				betId: string;
-				eventId: string;
-			}[];
-		};
-
-		await Promise.all(
-			Object.keys(betsByEvents).map(async (event) => {
-				for (const bet of betsByEvents[event]) {
-					await matchOrder(bet.betId, bet.eventId);
-				}
-			})
-		);
-
-		runMatchQueueRunning = false;
-	} catch (error) {
-		console.error("Error running match queue", error);
-		runMatchQueueRunning = false;
-	}
-};
-
-let liquidityEngineRunning = false;
-const liquidityEngine = async () => {
-	try {
-		if (liquidityEngineRunning) return;
-		liquidityEngineRunning = true;
-		const bets = await getLiquidityMatchableBets();
-
-		for (const bet of bets) {
-			await matchWithLiquidityEngine(bet);
-		}
-
-		liquidityEngineRunning = false;
-	} catch (e) {
-		console.error("Error running liquidityEngine", e);
-		liquidityEngineRunning = false;
-	}
-};
-
-setInterval(runMatchQueue, 5 * 1000);
-setInterval(liquidityEngine, 20 * 1000);
 
 export { Bet, placeBet, cancelBet };
