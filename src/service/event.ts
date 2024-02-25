@@ -17,9 +17,9 @@ const Category = z.object({
 	id: z.coerce.number().int(),
 	name: z.string(),
 	description: z.string().nullable(),
-	image_url: z.string().url().nullable(),
-	created_at: z.date(),
-	updated_at: z.date()
+	imageUrl: z.string().url().nullable(),
+	createdAt: z.date(),
+	updatedAt: z.date()
 });
 type Category = z.infer<typeof Category>;
 
@@ -27,9 +27,9 @@ const Source = z.object({
 	id: z.coerce.number().int(),
 	name: z.string(),
 	url: z.string().url(),
-	event_id: z.string(),
-	created_at: z.date(),
-	updated_at: z.date()
+	eventId: z.string(),
+	createdAt: z.date(),
+	updatedAt: z.date()
 });
 type Source = z.infer<typeof Source>;
 
@@ -70,26 +70,6 @@ const Event = z.object({
 	updatedAt: z.date()
 });
 type Event = z.infer<typeof Event>;
-
-const Bet = z.object({
-	id: z.string(),
-	event_id: z.string(),
-	user_id: z.string().nullable(),
-	option_id: z.coerce.number().int(),
-	quantity: z.coerce.number().int(),
-	price_per_quantity: z.coerce.number(),
-	reward_amount_used: z.coerce.number(),
-	unmatched_quantity: z.coerce.number().int(),
-	type: BetType,
-	buy_bet_id: z.string().nullable(),
-	profit: z.coerce.number().nullable(),
-	platform_commission: z.coerce.number().nullable(),
-	sold_quantity: z.coerce.number().int().nullable(),
-	created_at: z.date(),
-	updated_at: z.date()
-});
-
-type Bet = z.infer<typeof Bet>;
 
 const getEvent = async (sql: TransactionSql | Sql, id: string): Promise<Event> => {
 	const [event] = z.array(Event).parse(
@@ -199,6 +179,8 @@ const createEvent = async (
            FROM "event".category
            WHERE id IN (${category});`
 	]);
+
+	console.log("res", res);
 
 	return {
 		...res,
@@ -336,6 +318,5 @@ export {
 	Event,
 	Option,
 	Source,
-	Bet,
 	getEvent
 };

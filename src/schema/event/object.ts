@@ -8,16 +8,16 @@ const Category = builder.objectRef<EventService.Category>("Category").implement(
 		id: t.exposeInt("id"),
 		name: t.exposeString("name"),
 		description: t.exposeString("description", { nullable: true }),
-		imageUrl: t.exposeString("image_url", { nullable: true }),
+		imageUrl: t.exposeString("imageUrl", { nullable: true }),
 		createdAt: t.field({
 			authScopes: { admin: true },
 			type: "Date",
-			resolve: (parent) => parent.created_at
+			resolve: (parent) => parent.createdAt
 		}),
 		updatedAt: t.field({
 			authScopes: { admin: true },
 			type: "Date",
-			resolve: (parent) => parent.updated_at
+			resolve: (parent) => parent.updatedAt
 		})
 	})
 });
@@ -36,23 +36,23 @@ const Event = builder
 			name: t.exposeString("name"),
 			description: t.exposeString("description", { nullable: true }),
 			info: t.exposeString("info", { nullable: true }),
-			imageUrl: t.exposeString("image_url", { nullable: true }),
+			imageUrl: t.exposeString("imageUrl", { nullable: true }),
 			startAt: t.field({
 				type: "Date",
-				resolve: (parent) => parent.start_at
+				resolve: (parent) => parent.startAt
 			}),
 			endAt: t.field({
 				type: "Date",
-				resolve: (parent) => parent.end_at
+				resolve: (parent) => parent.endAt
 			}),
 			frozen: t.exposeBoolean("frozen"),
-			optionWon: t.exposeInt("option_won", { nullable: true }),
-			platformLiquidityLeft: t.exposeFloat("platform_liquidity_left"),
-			minLiquidityPercentage: t.exposeFloat("min_liquidity_percentage"),
-			maxLiquidityPercentage: t.exposeFloat("max_liquidity_percentage"),
-			liquidityInBetween: t.exposeBoolean("liquidity_in_between"),
-			platformFeesPercentage: t.exposeFloat("platform_fees_percentage"),
-			winPrice: t.exposeFloat("win_price"),
+			optionWon: t.exposeInt("optionWon", { nullable: true }),
+			platformLiquidityLeft: t.exposeFloat("platformLiquidityLeft"),
+			minLiquidityPercentage: t.exposeFloat("minLiquidityPercentage"),
+			maxLiquidityPercentage: t.exposeFloat("maxLiquidityPercentage"),
+			liquidityInBetween: t.exposeBoolean("liquidityInBetween"),
+			platformFeesPercentage: t.exposeFloat("platformFeesPercentage"),
+			winPrice: t.exposeFloat("winPrice"),
 			slippage: t.exposeFloat("slippage"),
 			category: t.field({
 				type: [Category],
@@ -81,12 +81,12 @@ const Event = builder
 			createdAt: t.field({
 				authScopes: { admin: true },
 				type: "Date",
-				resolve: (parent) => parent.created_at
+				resolve: (parent) => parent.createdAt
 			}),
 			updatedAt: t.field({
 				authScopes: { admin: true },
 				type: "Date",
-				resolve: (parent) => parent.updated_at
+				resolve: (parent) => parent.updatedAt
 			})
 		})
 	});
@@ -96,16 +96,16 @@ const Source = builder.objectRef<EventService.Source>("Source").implement({
 		id: t.exposeInt("id"),
 		name: t.exposeString("name"),
 		url: t.exposeString("url"),
-		eventId: t.exposeString("event_id"),
+		eventId: t.exposeString("eventId"),
 		createdAt: t.field({
 			authScopes: { admin: true },
 			type: "Date",
-			resolve: (parent) => parent.created_at
+			resolve: (parent) => parent.createdAt
 		}),
 		updatedAt: t.field({
 			authScopes: { admin: true },
 			type: "Date",
-			resolve: (parent) => parent.updated_at
+			resolve: (parent) => parent.updatedAt
 		})
 	})
 });
@@ -114,18 +114,18 @@ const Option = builder.objectRef<EventService.Option>("Option").implement({
 	fields: (t) => ({
 		id: t.exposeInt("id"),
 		name: t.exposeString("name"),
-		imageUrl: t.exposeString("image_url", { nullable: true }),
+		imageUrl: t.exposeString("imageUrl", { nullable: true }),
 		odds: t.exposeFloat("odds"),
-		eventId: t.exposeString("event_id"),
+		eventId: t.exposeString("eventId"),
 		createdAt: t.field({
 			authScopes: { admin: true },
 			type: "Date",
-			resolve: (parent) => parent.created_at
+			resolve: (parent) => parent.createdAt
 		}),
 		updatedAt: t.field({
 			authScopes: { admin: true },
 			type: "Date",
-			resolve: (parent) => parent.updated_at
+			resolve: (parent) => parent.updatedAt
 		})
 	})
 });

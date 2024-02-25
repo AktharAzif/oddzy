@@ -410,7 +410,7 @@ const matchOrder = async (betId: string, eventId: string) => {
 		betId: string;
 		matchedBetId: string;
 		quantity: number;
-		createAt: Date;
+		createdAt: Date;
 	}[] = [];
 
 	const insertSellPayoutTxSqlPayload: Transaction[] = [];
@@ -420,7 +420,7 @@ const matchOrder = async (betId: string, eventId: string) => {
 		unmatchedQuantity: number;
 		profit: number | null;
 		platformCommission: number | null;
-		updateAt: Date;
+		updatedAt: Date;
 	}[] = [];
 
 	const addUpdateBetSqlPayload = (betId: string, unmatchedQuantity: number, profit: number | null = null, platformCommission: number | null = null) =>
@@ -429,7 +429,7 @@ const matchOrder = async (betId: string, eventId: string) => {
 			unmatchedQuantity,
 			profit,
 			platformCommission,
-			updateAt: new Date()
+			updatedAt: new Date()
 		});
 
 	await db.sql.begin(async (sql) => {
@@ -459,7 +459,7 @@ const matchOrder = async (betId: string, eventId: string) => {
 				betId: betId,
 				matchedBetId: order.id,
 				quantity: matchedQuantity,
-				createAt: new Date()
+				createdAt: new Date()
 			});
 
 			const unmatchedQuantity = order.unmatchedQuantity - matchedQuantity;
@@ -484,7 +484,7 @@ const matchOrder = async (betId: string, eventId: string) => {
 		}
 
 		if (updateBetSqlPayload.length) {
-			const payload = updateBetSqlPayload.map(({ id, unmatchedQuantity, profit, platformCommission, updateAt }) => [id, unmatchedQuantity, profit, platformCommission, updateAt]);
+			const payload = updateBetSqlPayload.map(({ id, unmatchedQuantity, profit, platformCommission, updatedAt }) => [id, unmatchedQuantity, profit, platformCommission, updatedAt]);
 
 			//noinspection SqlResolve
 			updateBetSqlPayload.length &&
@@ -768,13 +768,18 @@ const getBetWinningPayoutTxSqlPayload = (event: Event, bet: Bet) => {
 
 	const amount = _amount - bet.rewardAmountUsed;
 
+	console.log("profit", profit, "platformCommission", platformCommission, "amount", amount, "quantity", quantity);
+
 	const updateBetPayload = {
 		id: bet.id,
 		profit,
 		platformCommission,
 		updatedAt: new Date()
 	};
+
 	const txPayload = generateTxSqlPayload(bet.userId as string, "bet_win", amount, bet.rewardAmountUsed, event.token, event.chain, null, "completed", bet.id, quantity);
+
+	console.log(txPayload);
 
 	return {
 		updateBetPayload,
@@ -795,8 +800,8 @@ const resolveEvent = async (eventId: string) => {
               SET profit              = -(bet.price_per_quantity * bet.quantity),
                   platform_commission = 0
               WHERE type = 'buy'
-                AND option_id
-                AND user_id IS NOT NULL <> ${event.optionWon}`;
+                AND option_id <> ${event.optionWon}
+                AND user_id IS NOT NULL`;
 
 		const bets = z.array(Bet).parse(
 			await db.sql`
@@ -860,8 +865,6 @@ const initEventPayout = async () => {
             AND resolved = false
 			`
 		);
-
-		console.log(events);
 
 		for (const event of events) {
 			await resolveEvent(event.id);

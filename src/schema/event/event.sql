@@ -125,15 +125,6 @@ CREATE TABLE
     "updated_at"                 TIMESTAMPTZ      NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_bet_event_id ON event.bet (event_id);
-
-CREATE INDEX idx_bet_unmatched_quantity ON event.bet (unmatched_quantity);
-
-CREATE INDEX idx_bet_type_option_id ON event.bet (type, option_id);
-
-CREATE INDEX idx_bet_price_per_quantity ON event.bet (price_per_quantity);
-
-CREATE INDEX idx_bet_created_at ON event.bet (created_at);
 
 ALTER TABLE "wallet".transaction
     ADD FOREIGN KEY ("bet_id") REFERENCES "event".bet (id);

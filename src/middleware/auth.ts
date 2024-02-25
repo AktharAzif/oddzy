@@ -1,10 +1,26 @@
 import * as jose from "jose";
-import { AuthService } from "../service";
+import { AuthService, UserService } from "../service";
 
-const isAdmin = async (req: Request) => {
+const validateAuthorizationHeader = (req: Request) => {
 	const auth = req.headers.get("authorization");
 	if (!auth) return false;
-	const token = auth.split(" ")[1];
+	return auth.split(" ")[1];
+};
+
+const isAuth = async (req: Request) => {
+	const token = validateAuthorizationHeader(req);
+	if (!token) return false;
+	try {
+		const { payload } = await jose.jwtVerify(token, UserService.userJwtSecret);
+		const userId = payload.sub as string;
+		return await UserService.getUser(userId);
+	} catch {
+		return null;
+	}
+};
+
+const isAdmin = async (req: Request) => {
+	const token = validateAuthorizationHeader(req);
 	if (!token) return false;
 	try {
 		await jose.jwtVerify(token, AuthService.adminSecret);
@@ -14,4 +30,4 @@ const isAdmin = async (req: Request) => {
 	}
 };
 
-export { isAdmin };
+export { isAuth, isAdmin };

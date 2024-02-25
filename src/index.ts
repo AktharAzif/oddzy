@@ -9,15 +9,16 @@ const yoga = createYoga({
 	schema: builder.toSchema(),
 	landingPage: false,
 	graphiql: Bun.env.ENV !== "production" && {
-		defaultQuery: "# Oddzy GraphQL Playground"
+		defaultQuery: "#Oddzy GraphQL Playground"
 	},
 	plugins: [
 		useDisableIntrospection({
-			isDisabled: () => (Bun.env.ENV === "production" ? true : false)
+			isDisabled: () => Bun.env.ENV === "production"
 		})
 	],
 	context: async ({ request }) => ({
-		admin: await AuthMiddleware.isAdmin(request)
+		admin: await AuthMiddleware.isAdmin(request),
+		user: await AuthMiddleware.isAuth(request)
 	})
 });
 
