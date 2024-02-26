@@ -22,7 +22,7 @@ type Token = z.infer<typeof Token>;
 const Chain = z.enum(["polygon", "base", "solana", "polygon_zkevm"]);
 type Chain = z.infer<typeof Chain>;
 
-const ChainType = z.enum(["eth", "solana"]);
+const ChainType = z.enum(["evm", "solana"]);
 type ChainType = z.infer<typeof ChainType>;
 
 const TransactionStatus = z.enum(["pending", "completed"]);
@@ -350,7 +350,7 @@ const verifyMessage = async (userId: string, chain: ChainType, nonce: string, si
 	let signedWallet: string;
 
 	try {
-		if (chain === "eth") signedWallet = ethers.verifyMessage(message, signature);
+		if (chain === "evm") signedWallet = ethers.verifyMessage(message, signature);
 		else {
 			const publicKey = Keypair.fromSecretKey(base58.decode(signature)).publicKey;
 			const encodedMessage = new TextEncoder().encode(message);
