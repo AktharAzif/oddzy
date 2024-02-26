@@ -10,8 +10,7 @@ if (!ADMIN_USERNAME || !ADMIN_PASSWORD || !ADMIN_JWT_SECRET) {
 const adminSecret = new TextEncoder().encode(ADMIN_JWT_SECRET);
 
 const adminLogin = async (username: string, password: string) => {
-	if (username.toLowerCase() !== ADMIN_USERNAME.toLowerCase() || password !== ADMIN_PASSWORD)
-		throw new ErrorUtil.HttpException(401, "Invalid username or password");
+	if (username.toLowerCase() !== ADMIN_USERNAME.toLowerCase() || password !== ADMIN_PASSWORD) throw new ErrorUtil.HttpException(401, "Invalid username or password");
 
 	const jwt = await new jose.SignJWT({}).setProtectedHeader({ alg: "HS256" }).setExpirationTime("1h").sign(adminSecret);
 	return {
