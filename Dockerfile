@@ -4,10 +4,11 @@ WORKDIR /app
 
 COPY package.json .
 COPY bun.lockb .
-COPY src .
+COPY src ./src
 COPY tsconfig.json .
 
 RUN bun install
+
 
 CMD ["bun", "run", "start"]
 
