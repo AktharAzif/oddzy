@@ -25,7 +25,7 @@ const SocialPlatform = z.enum(["twitter", "discord"]);
 type SocialPlatform = z.infer<typeof SocialPlatform>;
 
 const Social = z.object({
-	id: z.coerce.number(),
+	id: z.string(),
 	socialId: z.string(),
 	name: z.string(),
 	username: z.string(),
@@ -40,7 +40,7 @@ const Social = z.object({
 type Social = z.infer<typeof Social>;
 
 const ReferralCode = z.object({
-	id: z.coerce.number(),
+	id: z.string(),
 	code: z.string(),
 	used: z.boolean(),
 	userId: z.string().nullable(),
@@ -156,7 +156,7 @@ const getLoggedInClient = async (refreshToken: string): Promise<TwitterApi> => {
 		onTokenUpdate: async (token) => {
 			await db.sql`UPDATE "user".social
                    SET refresh_token = ${token.refreshToken as string},
-                       updated_at    = NOW()
+                       updated_at    = ${new Date()}
                    WHERE refresh_token = ${refreshToken}`;
 			await db.redis.set(refreshToken, token.accessToken, "EX", token.expiresIn);
 		},
@@ -271,8 +271,8 @@ const loginWithTwitter = async (code: string, state: string): Promise<{ jwt: str
 		await db.sql.begin((sql) => [
 			sql`INSERT INTO "user"."user" (id)
           VALUES (${userId})`,
-			sql`INSERT INTO "user".social (social_id, name, username, avatar, platform, refresh_token, user_id)
-          VALUES (${id}, ${name}, ${username}, ${avatar}, 'twitter', ${refreshToken},
+			sql`INSERT INTO "user".social (id, social_id, name, username, avatar, platform, refresh_token, user_id)
+          VALUES (${createId()}, ${id}, ${name}, ${username}, ${avatar}, 'twitter', ${refreshToken},
                   ${userId})`
 		]);
 	}
@@ -389,7 +389,6 @@ const connectDiscord = async (userId: string, code: string): Promise<Social> => 
                 WHERE social_id = ${id}
                   AND platform = 'discord'`
 		);
-		console.log(discordUser, userId);
 		if (discordUser && discordUser.userId !== userId) throw new ErrorUtil.HttpException(400, "Discord connected to other user.");
 
 		if (discordUser && (discordUser.name !== name || discordUser.username !== username || discordUser.avatar !== avatar || discordUser.email !== email))
@@ -399,7 +398,7 @@ const connectDiscord = async (userId: string, code: string): Promise<Social> => 
                       username   = ${username},
                       avatar     = ${avatar},
                       email      = ${email},
-                      updated_at = NOW()
+                      updated_at = ${new Date()}
                   WHERE social_id = ${id}
                     AND platform = 'discord'
                   RETURNING *`
@@ -408,6 +407,7 @@ const connectDiscord = async (userId: string, code: string): Promise<Social> => 
 		if (discordUser) throw new ErrorUtil.HttpException(400, "Discord already connected.");
 
 		const sqlPayload = {
+			id: createId(),
 			socialId: id,
 			name,
 			username,
@@ -463,15 +463,16 @@ const getAccess = async (userId: string, code: string) => {
 	await db.sql.begin(async (sql) => {
 		await sql`UPDATE "user".user
               SET access     = true,
-                  updated_at = NOW()
+                  updated_at = ${new Date()}
               WHERE id = ${userId}`;
 
 		await sql`UPDATE "user".referral_code
               SET used       = true,
-                  updated_at = NOW()
+                  updated_at = ${new Date()}
               WHERE id = ${referralCode.id}`;
 
 		const referralSqlPayload = {
+			id: createId(),
 			userId,
 			referralCodeId: referralCode.id
 		};
@@ -479,6 +480,7 @@ const getAccess = async (userId: string, code: string) => {
 		await sql`INSERT INTO "user".referral ${sql(referralSqlPayload)}`;
 
 		const referralCodesSqlPayload = new Array(3).fill(null).map(() => ({
+			id: createId(),
 			code: `ODZ-${createId().slice(0, 6).toUpperCase()}`,
 			userId
 		}));
@@ -539,11 +541,10 @@ const getUser = async (userId: string): Promise<User> => {
  * @async
  */
 const updateUser = async (userId: string, about: string, instagram: string): Promise<User> => {
-	console.log(userId, about, instagram);
 	const [user] = await db.sql`UPDATE "user".user
                               SET about      = ${about},
                                   instagram  = ${instagram},
-                                  updated_at = NOW()
+                                  updated_at = ${new Date()}
                               WHERE id = ${userId}
                               RETURNING *`;
 	return User.parse(user);

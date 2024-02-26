@@ -60,7 +60,8 @@ User.implement({
 			resolve: (parent) => parent.updatedAt,
 			description: "The date and time when the user was last updated. Only the admin can access this field."
 		})
-	})
+	}),
+	description: "The user response object."
 });
 
 const Social = builder.objectRef<UserService.Social>("Social");
@@ -104,13 +105,14 @@ Social.implement({
 			resolve: (parent) => parent.updatedAt,
 			description: "The date and time when the social account was last updated. Only the admin can access this field."
 		})
-	})
+	}),
+	description: "The social account response object."
 });
 
 const ReferralCode = builder.objectRef<UserService.ReferralCode>("ReferralCode");
 ReferralCode.implement({
 	fields: (t) => ({
-		id: t.exposeInt("id", {
+		id: t.exposeString("id", {
 			description: "The unique identifier of the referral code."
 		}),
 		userId: t.exposeString("userId", {
@@ -146,6 +148,7 @@ ReferralCode.implement({
 			resolve: (parent) => parent.updatedAt,
 			description: "The date and time when the referral code was last updated. Only the admin can access this field."
 		})
-	})
+	}),
+	description: "The referral code response object."
 });
 export { UserLoginResponse, User, Social, ReferralCode };

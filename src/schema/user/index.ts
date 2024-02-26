@@ -103,3 +103,5 @@ builder.queryField("referralCodes", (t) =>
 		description: "Fetches the referral codes of the user."
 	})
 );
+
+export { User };
