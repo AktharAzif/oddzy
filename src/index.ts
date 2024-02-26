@@ -8,9 +8,7 @@ const PORT = Bun.env.PORT || 3000;
 const yoga = createYoga({
 	schema: builder.toSchema(),
 	landingPage: false,
-	graphiql: Bun.env.ENV !== "production" && {
-		defaultQuery: "#Oddzy GraphQL Playground"
-	},
+	graphiql: Bun.env.ENV !== "production",
 	plugins: [
 		useDisableIntrospection({
 			isDisabled: () => Bun.env.ENV === "production"
