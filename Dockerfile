@@ -9,7 +9,7 @@ COPY tsconfig.json .
 
 RUN bun install
 
-CMD ["bun", "src/index.ts"]
+CMD ["bun", "run", "start"]
 
 EXPOSE 3000
 
