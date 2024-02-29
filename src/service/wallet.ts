@@ -8,6 +8,7 @@ import { z } from "zod";
 import { db, rpcProviders } from "../config";
 import { redis } from "../config/db.ts";
 import { ErrorUtil } from "../util";
+import { WalletService } from "./index.ts";
 
 const { EVM_PRIVATE_KEY, SOLANA_PRIVATE_KEY } = Bun.env;
 
@@ -185,7 +186,7 @@ const getUserTokenBalance = async (
 	rewardBalance: number;
 	totalBalance: number;
 }> => {
-	const [{ rewardBalance, totalBalance }] = (await sql`
+	const [res] = (await sql`
       SELECT SUM(reward_amount)          as reward_balance,
              SUM(amount + reward_amount) AS total_balance
       FROM "wallet".transaction
@@ -198,6 +199,15 @@ const getUserTokenBalance = async (
 			totalBalance: string | null;
 		}
 	];
+
+	if (!res) {
+		return {
+			rewardBalance: 0,
+			totalBalance: 0
+		};
+	}
+
+	const { rewardBalance, totalBalance } = res;
 
 	return {
 		rewardBalance: Number(rewardBalance),
@@ -233,6 +243,18 @@ const getUserBalance = async (userId: string): Promise<Balance[]> => {
 			chain: Chain;
 		}
 	];
+
+	WalletService.TokenCombination.forEach((item) => {
+		if (!res.find((i) => i.token === item.token && i.chain === item.chain)) {
+			res.push({
+				rewardBalance: "0",
+				totalBalance: "0",
+				userId,
+				token: item.token,
+				chain: item.chain
+			});
+		}
+	});
 
 	return z.array(Balance).parse(res);
 };
