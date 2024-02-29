@@ -7,6 +7,7 @@ import nacl from "tweetnacl";
 import { z } from "zod";
 import { db, rpcProviders } from "../config";
 import { redis } from "../config/db.ts";
+import type { TransactionPaginatedResponse } from "../schema/wallet/object.ts";
 import { ErrorUtil } from "../util";
 import { WalletService } from "./index.ts";
 
@@ -260,24 +261,25 @@ const getUserBalance = async (userId: string): Promise<Balance[]> => {
 };
 
 /**
- * Retrieves a list of transactions for a specific user from the database.
- * The transactions can be filtered by token and chain.
- * The results are paginated based on the provided page number and limit.
+ * This function retrieves a list of transactions from the database based on the provided filters and pagination parameters.
+ * The function supports filtering by user ID, token, and chain.
+ * The function also supports pagination through the page and limit parameters.
+ * The function returns a paginated response containing the filtered transactions and the total count of transactions that match the filters.
  *
  * @async
  * @function getTransactions
  * @param {string} userId - The ID of the user whose transactions are to be retrieved.
- * @param {Token | null} [token=null] - The token to filter the transactions by. Defaults to null.
- * @param {Chain | null} [chain=null] - The chain to filter the transactions by. Defaults to null.
- * @param {number} page - The page number for the pagination.
- * @param {number} limit - The number of transactions to retrieve per page.
- * @returns {Promise<Transaction[]>} - A promise that resolves to an array of transactions for the specified user.
- * @throws {ErrorUtil.HttpException} - If the provided token and chain combination is invalid.
+ * @param {Token | null} token - The token to filter the transactions by. If null, no token filter is applied.
+ * @param {Chain | null} chain - The chain to filter the transactions by. If null, no chain filter is applied.
+ * @param {number} page - The page number for pagination. The first page is 0.
+ * @param {number} limit - The number of transactions to return per page.
+ * @returns {Promise<TransactionPaginatedResponse>} - Returns a promise that resolves to a paginated response containing the filtered transactions and the total count of transactions that match the filters.
+ * @throws {ErrorUtil.HttpException} - If the token and chain combination is invalid.
  */
-const getTransactions = async (userId: string, token: Token | null = null, chain: Chain | null = null, page: number, limit: number): Promise<Transaction[]> => {
+const getTransactions = async (userId: string, token: Token | null = null, chain: Chain | null = null, page: number, limit: number): Promise<TransactionPaginatedResponse> => {
 	if ((token || chain) && !TokenCombination.some((item) => item.token === token && item.chain === chain)) throw new ErrorUtil.HttpException(400, "Invalid token and chain combination.");
 
-	const res = (await db.sql`
+	const transactions = db.sql`
       SELECT *
       FROM "wallet".transaction
       WHERE user_id = ${userId}
@@ -285,9 +287,23 @@ const getTransactions = async (userId: string, token: Token | null = null, chain
           ${chain ? db.sql`AND chain = ${chain}` : db.sql``}
       ORDER BY created_at DESC
       LIMIT ${limit} OFFSET ${page * limit}
-	`) as Transaction[];
+	`;
+	const total = db.sql`
+      SELECT COUNT(*)
+      FROM "wallet".transaction
+      WHERE user_id = ${userId}
+          ${token ? db.sql`AND token = ${token}` : db.sql``}
+          ${chain ? db.sql`AND chain = ${chain}` : db.sql``}
+	` as Promise<[{ count: string }]>;
 
-	return z.array(Transaction).parse(res);
+	const [transactionsRes, [totalRes]] = await Promise.all([transactions, total]);
+
+	return {
+		transactions: z.array(Transaction).parse(transactionsRes),
+		total: Number(totalRes.count),
+		page: page + 1,
+		limit
+	};
 };
 
 /**

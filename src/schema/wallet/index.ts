@@ -1,7 +1,7 @@
 import { builder, rpcProviders } from "../../config";
 import { UserService, WalletService } from "../../service";
 import { ErrorUtil } from "../../util";
-import { Balance, ChainEnum, ChainType, LinkedWallet, SigningMessageResponse, TokenCombination, TokenEnum, Transaction } from "./object.ts";
+import { Balance, ChainEnum, ChainType, LinkedWallet, SigningMessageResponse, TokenCombination, TokenEnum, Transaction, TransactionPaginatedResponse } from "./object.ts";
 
 builder.queryField("balance", (t) =>
 	t.field({
@@ -38,7 +38,7 @@ builder.queryField("signingMessage", (t) =>
 
 builder.queryField("transactions", (t) =>
 	t.field({
-		type: [Transaction],
+		type: TransactionPaginatedResponse,
 		authScopes: (_, __, { user }) => (user && user.access) || false,
 		args: {
 			page: t.arg.int({

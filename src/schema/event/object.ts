@@ -19,14 +19,31 @@ Category.implement({
 		description: t.exposeString("description", { nullable: true, description: "The description of the category" }),
 		imageUrl: t.exposeString("imageUrl", { nullable: true, description: "The URL of the category image" }),
 		events: t.field({
-			type: [Event],
-			resolve: async (parent) =>
-				await EventService.getEvents({
-					category: [parent.id]
+			type: EventPaginatedResponse,
+			args: {
+				page: t.arg.int({
+					required: true,
+					defaultValue: 1,
+					description: "The page number. Min 1.",
+					validate: { min: 1 }
 				}),
+				limit: t.arg.int({
+					required: true,
+					defaultValue: 20,
+					description: "The limit of events per page. Min 1, Max 100.",
+					validate: { min: 1, max: 100 }
+				})
+			},
+			resolve: async (parent, { page, limit }) =>
+				await EventService.getEvents(
+					{
+						category: [parent.id]
+					},
+					page - 1,
+					limit
+				),
 			description: "The events in the category"
 		}),
-
 		createdAt: t.field({
 			authScopes: { admin: true },
 			type: "Date",
@@ -42,6 +59,34 @@ Category.implement({
 	}),
 	description: "The category response object."
 });
+
+const CategoryPaginatedResponse = builder.objectRef<{
+	categories: EventService.Category[];
+	total: number;
+	page: number;
+	limit: number;
+}>("CategoryPaginatedResponse");
+
+CategoryPaginatedResponse.implement({
+	fields: (t) => ({
+		categories: t.field({
+			type: [Category],
+			resolve: (parent) => parent.categories,
+			description: "The categories"
+		}),
+		total: t.exposeInt("total", {
+			description: "The total number of categories"
+		}),
+		page: t.exposeInt("page", {
+			description: "Current page number"
+		}),
+		limit: t.exposeInt("limit", {
+			description: "The limit of categories per page"
+		})
+	}),
+	description: "The paginated category response object."
+});
+type CategoryPaginatedResponse = typeof CategoryPaginatedResponse.$inferType;
 
 const Event = builder.objectRef<
 	EventService.Event & {
@@ -243,4 +288,32 @@ Option.implement({
 	description: "The option response object."
 });
 
-export { Category, EventStatusEnum, Event, Option, Source };
+const EventPaginatedResponse = builder.objectRef<{
+	events: EventService.Event[];
+	total: number;
+	page: number;
+	limit: number;
+}>("EventPaginatedResponse");
+
+EventPaginatedResponse.implement({
+	fields: (t) => ({
+		events: t.field({
+			type: [Event],
+			resolve: (parent) => parent.events,
+			description: "The events"
+		}),
+		total: t.exposeInt("total", {
+			description: "The total number of events"
+		}),
+		page: t.exposeInt("page", {
+			description: "Current page number"
+		}),
+		limit: t.exposeInt("limit", {
+			description: "The limit of events per page"
+		})
+	}),
+	description: "The paginated event response object."
+});
+type EventPaginatedResponse = typeof EventPaginatedResponse.$inferType;
+
+export { Category, EventStatusEnum, Event, Option, Source, EventPaginatedResponse, CategoryPaginatedResponse };

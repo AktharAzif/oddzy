@@ -3,6 +3,7 @@ import type { Sql, TransactionSql } from "postgres";
 import { z } from "zod";
 import { db } from "../config";
 import { EventSchema } from "../schema";
+import type { CategoryPaginatedResponse, EventPaginatedResponse } from "../schema/event";
 import { ErrorUtil } from "../util";
 import * as WalletService from "./wallet";
 
@@ -150,26 +151,36 @@ const deleteCategory = async (id: number): Promise<Category> => {
 };
 
 /**
- * This function retrieves a list of categories from the database.
- * The categories are ordered by the number of events associated with them in descending order.
- * Pagination is applied to the results based on the provided page and limit parameters.
+ * This function retrieves a list of categories from the database based on the provided pagination parameters.
+ * The function returns a paginated response containing the categories and the total count of categories.
  *
  * @async
  * @function getCategories
  * @param {number} page - The page number for pagination. The first page is 0.
  * @param {number} limit - The number of categories to return per page.
- * @returns {Promise<Category[]>} - Returns a promise that resolves to an array of Category objects.
+ * @returns {Promise<CategoryPaginatedResponse>} - Returns a promise that resolves to a paginated response containing the categories and the total count of categories.
  */
-const getCategories = async (page: number, limit: number): Promise<Category[]> =>
-	z.array(Category).parse(
-		await db.sql`
-        SELECT c.id, name, description, image_url, c.created_at, updated_at
-        FROM "event".category AS c
-                 LEFT JOIN "event".event_category AS ec ON c.id = ec.category_id
-        GROUP BY c.id, name, description, image_url, c.created_at, updated_at
-        ORDER BY COUNT(ec.event_id) DESC
-        LIMIT ${limit} OFFSET ${page * limit};`
-	);
+const getCategories = async (page: number, limit: number): Promise<CategoryPaginatedResponse> => {
+	const categories = db.sql`
+      SELECT c.id, name, description, image_url, c.created_at, updated_at
+      FROM "event".category AS c
+               LEFT JOIN "event".event_category AS ec ON c.id = ec.category_id
+      GROUP BY c.id, name, description, image_url, c.created_at, updated_at
+      ORDER BY COUNT(ec.event_id) DESC
+      LIMIT ${limit} OFFSET ${page * limit};`;
+	const total = db.sql`
+      SELECT COUNT(*)
+      FROM "event".category;` as Promise<[{ count: string }]>;
+
+	const [categoriesRes, [totalRes]] = await Promise.all([categories, total]);
+
+	return {
+		categories: z.array(Category).parse(categoriesRes),
+		page: page + 1,
+		limit: limit,
+		total: Number(totalRes.count)
+	};
+};
 
 /**
  * This function creates an event in the database.
@@ -391,30 +402,47 @@ const updateOptions = async (payload: EventSchema.UpdateEventOptionPayload): Pro
 };
 
 /**
- * This function retrieves a list of events from the database based on the provided filters.
- * The filters include startAt, endAt, category, status, search, token, and chain.
- * The function constructs a SQL query based on the provided filters and executes it.
- * The function returns a promise that resolves to an array of Event objects that match the provided filters.
+ * This function retrieves a list of events from the database based on the provided filters and pagination parameters.
+ * The function supports filtering by start time, end time, category, status, search term, token, and chain.
+ * The function also supports pagination through the page and limit parameters.
+ * The function returns a paginated response containing the filtered events and the total count of events that match the filters.
  *
  * @async
  * @function getEvents
  * @param {EventSchema.getEventsPayload} payload - The payload for retrieving events. It must be an object that adheres to the `getEventsPayload` schema.
- * @returns {Promise<Event[]>} - Returns a promise that resolves to an array of Event objects.
- * @throws {Error} - Throws an error if the SQL query fails.
+ * @param {number} page - The page number for pagination. The first page is 0.
+ * @param {number} limit - The number of events to return per page.
+ * @returns {Promise<EventPaginatedResponse>} - Returns a promise that resolves to a paginated response containing the filtered events and the total count of events that match the filters.
  */
-const getEvents = async (payload: EventSchema.getEventsPayload): Promise<Event[]> => {
+const getEvents = async (payload: EventSchema.getEventsPayload, page: number, limit: number): Promise<EventPaginatedResponse> => {
 	const { startAt, endAt, category, status, search, token, chain } = payload;
 
-	const res = await db.sql`
+	const events = db.sql`
       SELECT *
       FROM "event".event ${startAt || endAt || category || status || search || token || chain ? db.sql`WHERE true` : db.sql``} ${startAt ? db.sql`AND start_at >= ${startAt}` : db.sql``} ${endAt ? db.sql`AND end_at <= ${endAt}` : db.sql``}
           ${category ? db.sql`AND id IN (SELECT event_id FROM "event".event_category WHERE category_id IN ${db.sql(category)})` : db.sql``}
           ${status ? db.sql`AND status = ${status}` : db.sql``}
           ${search ? db.sql`AND name ILIKE ${`%${search}%`} OR description ILIKE ${`%${search}%`}` : db.sql``}
           ${token ? db.sql`AND token = ${token}` : db.sql``}
-          ${chain ? db.sql`AND chain = ${chain}` : db.sql``};`;
+          ${chain ? db.sql`AND chain = ${chain}` : db.sql``}
+      OFFSET ${page * limit} LIMIT ${limit};`;
+	const total = db.sql`
+      SELECT COUNT(*)
+      FROM "event".event ${startAt || endAt || category || status || search || token || chain ? db.sql`WHERE true` : db.sql``} ${startAt ? db.sql`AND start_at >= ${startAt}` : db.sql``} ${endAt ? db.sql`AND end_at <= ${endAt}` : db.sql``}
+          ${category ? db.sql`AND id IN (SELECT event_id FROM "event".event_category WHERE category_id IN ${db.sql(category)})` : db.sql``}
+          ${status ? db.sql`AND status = ${status}` : db.sql``}
+          ${search ? db.sql`AND name ILIKE ${`%${search}%`} OR description ILIKE ${`%${search}%`}` : db.sql``}
+          ${token ? db.sql`AND token = ${token}` : db.sql``}
+          ${chain ? db.sql`AND chain = ${chain}` : db.sql``};` as Promise<[{ count: string }]>;
 
-	return z.array(Event).parse(res);
+	const [eventsRes, [totalRes]] = await Promise.all([events, total]);
+
+	return {
+		events: z.array(Event).parse(eventsRes),
+		page: page + 1,
+		limit: limit,
+		total: Number(totalRes.count)
+	};
 };
 
 /**

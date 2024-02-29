@@ -153,6 +153,34 @@ Transaction.implement({
 	description: "The transaction response object."
 });
 
+const TransactionPaginatedResponse = builder.objectRef<{
+	transactions: WalletService.Transaction[];
+	total: number;
+	page: number;
+	limit: number;
+}>("TransactionPaginatedResponse");
+
+TransactionPaginatedResponse.implement({
+	fields: (t) => ({
+		transactions: t.field({
+			type: [Transaction],
+			resolve: (parent) => parent.transactions,
+			description: "The list of transactions."
+		}),
+		total: t.exposeInt("total", {
+			description: "The total number of transactions."
+		}),
+		page: t.exposeInt("page", {
+			description: "Current page number."
+		}),
+		limit: t.exposeInt("limit", {
+			description: "The limit of transactions per page."
+		})
+	}),
+	description: "The paginated response object for the transactions."
+});
+type TransactionPaginatedResponse = typeof TransactionPaginatedResponse.$inferType;
+
 const SigningMessageResponse = builder.objectRef<{
 	message: string;
 	nonce: string;
@@ -191,4 +219,4 @@ TokenCombination.implement({
 	description: "The response object for the token combination."
 });
 
-export { ChainEnum, ChainType, TokenEnum, Balance, LinkedWallet, Transaction, SigningMessageResponse, TokenCombination };
+export { ChainEnum, ChainType, TokenEnum, Balance, LinkedWallet, Transaction, SigningMessageResponse, TokenCombination, TransactionPaginatedResponse };

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { builder, db } from "../../config";
 import { EventService } from "../../service";
 import { ChainEnum, TokenEnum } from "../wallet";
@@ -11,7 +12,7 @@ import {
 	UpdateEventOptionPayload,
 	UpdateEventSourcePayload
 } from "./input";
-import { Category, Event, EventStatusEnum, Option, Source } from "./object";
+import { Category, CategoryPaginatedResponse, Event, EventPaginatedResponse, EventStatusEnum, Option, Source } from "./object";
 
 builder.queryField("category", (t) =>
 	t.field({
@@ -26,7 +27,7 @@ builder.queryField("category", (t) =>
 
 builder.queryField("categories", (t) =>
 	t.field({
-		type: [Category],
+		type: CategoryPaginatedResponse,
 		args: {
 			page: t.arg.int({
 				required: true,
@@ -277,7 +278,7 @@ builder.queryField("event", (t) =>
 
 builder.queryField("events", (t) =>
 	t.field({
-		type: [Event],
+		type: EventPaginatedResponse,
 		args: {
 			startAt: t.arg({
 				type: "Date",
@@ -300,14 +301,24 @@ builder.queryField("events", (t) =>
 			chain: t.arg({
 				type: ChainEnum,
 				description: "The chain in which the event is to be fetched"
+			}),
+			page: t.arg.int({
+				required: true,
+				defaultValue: 1,
+				description: "The page number. Min 1."
+			}),
+			limit: t.arg.int({
+				required: true,
+				defaultValue: 20,
+				description: "The limit of events per page. Min 1, Max 100."
 			})
 		},
 		validate: {
-			schema: getEventsPayload
+			schema: z.intersection(getEventsPayload, z.object({ page: z.number().min(1), limit: z.number().min(1).max(100) }))
 		},
-		resolve: async (_, args) => await EventService.getEvents(args),
+		resolve: async (_, { page, limit, ...args }) => await EventService.getEvents(args, page - 1, limit),
 		description: "Get a list of events"
 	})
 );
 
-export type { CreateEventPayload, CreateOrUpdateCategoryPayload, UpdateEventOptionPayload, UpdateEventSourcePayload, getEventsPayload };
+export type { CreateEventPayload, CreateOrUpdateCategoryPayload, UpdateEventOptionPayload, UpdateEventSourcePayload, getEventsPayload, CategoryPaginatedResponse, EventPaginatedResponse };
