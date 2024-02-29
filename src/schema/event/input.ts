@@ -2,6 +2,9 @@ import { z } from "zod";
 import { builder } from "../../config";
 import { EventService, WalletService } from "../../service";
 
+/**
+ * This is a Zod schema for validating the payload when creating or updating a category.
+ */
 const CreateOrUpdateCategoryPayload = z.object({
 	id: z.number().nullish(),
 	name: z.string().max(255),
@@ -10,21 +13,9 @@ const CreateOrUpdateCategoryPayload = z.object({
 });
 type CreateOrUpdateCategoryPayload = z.infer<typeof CreateOrUpdateCategoryPayload>;
 
-const CreateEventSourceInput = builder.inputType("CreateEventSourceInput", {
-	fields: (t) => ({
-		name: t.string({ required: true }),
-		url: t.string({ required: true })
-	})
-});
-
-const CreateEventOptionInput = builder.inputType("CreateEventOptionInput", {
-	fields: (t) => ({
-		name: t.string({ required: true }),
-		imageUrl: t.string(),
-		odds: t.float({ required: true })
-	})
-});
-
+/**
+ * This is a Zod schema for validating the payload when creating an event.
+ */
 const CreateEventPayload = z
 	.object({
 		name: z.string(),
@@ -33,6 +24,7 @@ const CreateEventPayload = z
 		imageUrl: z.string().nullish(),
 		startAt: z.date(),
 		endAt: z.date(),
+		freezeAt: z.date().nullish(),
 		platformLiquidityLeft: z.number().min(0),
 		minLiquidityPercentage: z.number().min(0),
 		maxLiquidityPercentage: z.number().min(0),
@@ -78,6 +70,31 @@ const CreateEventPayload = z
 	});
 type CreateEventPayload = z.infer<typeof CreateEventPayload>;
 
+/**
+ * This is a Zod schema for validating the payload when updating an event.
+ */
+const UpdateEventPayload = z.object({
+	id: z.string(),
+	name: z.string(),
+	description: z.string().nullish(),
+	info: z.string().nullish(),
+	imageUrl: z.string().nullish(),
+	startAt: z.date(),
+	endAt: z.date(),
+	frozen: z.boolean(),
+	freezeAt: z.date().nullish(),
+	platformLiquidityLeft: z.number().min(0),
+	minLiquidityPercentage: z.number().min(0),
+	maxLiquidityPercentage: z.number().min(0),
+	liquidityInBetween: z.boolean(),
+	platformFeesPercentage: z.number().min(0),
+	slippage: z.number().min(0)
+});
+type UpdateEventPayload = z.infer<typeof UpdateEventPayload>;
+
+/**
+ * This is a Zod schema for validating the input when updating an event source.
+ */
 const UpdateEventSourcePayload = z.object({
 	id: z.number().int(),
 	name: z.string(),
@@ -85,15 +102,9 @@ const UpdateEventSourcePayload = z.object({
 });
 type UpdateEventSourcePayload = z.infer<typeof UpdateEventSourcePayload>;
 
-const UpdateEventOptionInput = builder.inputType("UpdateOptionInput", {
-	fields: (t) => ({
-		id: t.int({ required: true }),
-		name: t.string({ required: true }),
-		imageUrl: t.string(),
-		odds: t.float({ required: true })
-	})
-});
-
+/**
+ * This is a Zod schema for validating the input when updating event options.
+ */
 const UpdateEventOptionPayload = z.object({
 	eventId: z.string(),
 	option: z
@@ -113,36 +124,70 @@ const UpdateEventOptionPayload = z.object({
 });
 type UpdateEventOptionPayload = z.infer<typeof UpdateEventOptionPayload>;
 
-const PlaceBetPayload = z
+/**
+ * This is a Zod schema for validating the payload when getting events.
+ */
+const getEventsPayload = z
 	.object({
-		eventId: z.string(),
-		optionId: z.number().int(),
-		price: z.number().positive(),
-		quantity: z.number().int().min(1),
-		type: EventService.BetType,
-		buyBetId: z.string().nullish()
+		startAt: z.date().nullish(),
+		endAt: z.date().nullish(),
+		category: z.array(z.number()).min(1).nullish(),
+		status: EventService.EventStatus.nullish(),
+		search: z.string().nullish(),
+		token: WalletService.Token.nullish(),
+		chain: WalletService.Chain.nullish()
 	})
-	.refine(({ type, buyBetId }) => !(type === "sell" && !buyBetId), {
-		message: "buyBetId is required for sell bet",
-		path: ["buyBetId"]
+	.refine(({ startAt, endAt }) => !startAt || !endAt || startAt < endAt, {
+		message: "Start date must be less than end date",
+		path: ["startAt", "endAt"]
+	})
+	.refine(({ token, chain }) => !token || !chain || WalletService.TokenCombination.some((item) => item.token === token && item.chain === chain), {
+		message: "Invalid token and chain combination. Allowed combinations are: " + WalletService.TokenCombination.map((item) => `${item.token} - ${item.chain}`).join(", "),
+		path: ["token", "chain"]
 	});
-type PlaceBetPayload = z.infer<typeof PlaceBetPayload>;
+type getEventsPayload = z.infer<typeof getEventsPayload>;
 
-const CancelBetPayload = z.object({
-	id: z.string(),
-	eventId: z.string(),
-	quantity: z.number().int().min(1)
+/**
+ * This is a pothos input type for creating an event source.
+ */
+const CreateEventSourceInput = builder.inputType("CreateEventSourceInput", {
+	fields: (t) => ({
+		name: t.string({ required: true, description: "The name of the source" }),
+		url: t.string({ required: true, description: "The URL of the source" })
+	})
 });
-type CancelBetPayload = z.infer<typeof CancelBetPayload>;
+
+/**
+ * This is a pothos input type for creating an event option.
+ */
+const CreateEventOptionInput = builder.inputType("CreateEventOptionInput", {
+	fields: (t) => ({
+		name: t.string({ required: true, description: "The name of the option" }),
+		imageUrl: t.string({ description: "The URL of the option image" }),
+		odds: t.float({ required: true, description: "The odds of the option" })
+	})
+});
+
+/**
+ * This is a pothos input type for updating an event option.
+ */
+const UpdateEventOptionInput = builder.inputType("UpdateOptionInput", {
+	fields: (t) => ({
+		id: t.int({ required: true, description: "The unique identifier of the option" }),
+		name: t.string({ required: true, description: "The name of the option" }),
+		imageUrl: t.string({ description: "The URL of the option image" }),
+		odds: t.float({ required: true, description: "The odds of the option" })
+	})
+});
 
 export {
-	CreateEventOptionInput,
-	CreateEventSourceInput,
-	UpdateEventOptionInput,
 	UpdateEventOptionPayload,
 	CreateOrUpdateCategoryPayload,
 	CreateEventPayload,
 	UpdateEventSourcePayload,
-	PlaceBetPayload,
-	CancelBetPayload
+	CreateEventOptionInput,
+	CreateEventSourceInput,
+	UpdateEventOptionInput,
+	UpdateEventPayload,
+	getEventsPayload
 };

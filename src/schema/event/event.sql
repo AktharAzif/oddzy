@@ -17,6 +17,7 @@ CREATE TABLE
     "start_at"                 TIMESTAMPTZ          NOT NULL,
     "end_at"                   TIMESTAMPTZ          NOT NULL,
     "frozen"                   BOOLEAN              NOT NULL DEFAULT false,
+    "freeze_at"                TIMESTAMPTZ,
     "status"                   "event".event_status NOT NULL DEFAULT 'scheduled',
     "option_won"               INTEGER,
     "platform_fees_percentage" FLOAT                NOT NULL,
@@ -40,6 +41,7 @@ CREATE TABLE
     "name"       VARCHAR(255) NOT NULL,
     "image_url"  TEXT,
     "odds"       FLOAT        NOT NULL,
+    "price"      DECIMAL      NOT NULL,
     "created_at" TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );

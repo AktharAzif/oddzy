@@ -1,6 +1,5 @@
 import { createId } from "@paralleldrive/cuid2";
 import type { Sql, TransactionSql } from "postgres";
-import snakecaseKeys from "snakecase-keys";
 import { z } from "zod";
 import { db } from "../config";
 import { EventSchema } from "../schema";
@@ -9,9 +8,6 @@ import * as WalletService from "./wallet";
 
 const EventStatus = z.enum(["scheduled", "live", "completed"]);
 type EventStatus = z.infer<typeof EventStatus>;
-
-const BetType = z.enum(["buy", "sell"]);
-type BetType = z.infer<typeof BetType>;
 
 const Category = z.object({
 	id: z.coerce.number().int(),
@@ -38,6 +34,7 @@ const Option = z.object({
 	name: z.string(),
 	imageUrl: z.string().url().nullable(),
 	odds: z.coerce.number(),
+	price: z.coerce.number(),
 	eventId: z.string(),
 	createdAt: z.date(),
 	updatedAt: z.date()
@@ -53,6 +50,7 @@ const Event = z.object({
 	startAt: z.date(),
 	endAt: z.date(),
 	frozen: z.boolean(),
+	freezeAt: z.date().nullable(),
 	optionWon: z.coerce.number().int().nullable(),
 	resolved: z.boolean(),
 	resolvedAt: z.date().nullable(),
@@ -71,6 +69,16 @@ const Event = z.object({
 });
 type Event = z.infer<typeof Event>;
 
+/**
+ * This function retrieves an event from the database using its ID.
+ *
+ * @async
+ * @function getEvent
+ * @param {TransactionSql | Sql} sql - An instance of Sql or TransactionSql from the "postgres" package.
+ * @param {string} id - The ID of the event to retrieve.
+ * @returns {Promise<Event>} - Returns a promise that resolves to an Event object if found, otherwise it throws an HttpException with status 404.
+ * @throws {ErrorUtil.HttpException} - Throws an HttpException if the event is not found.
+ */
 const getEvent = async (sql: TransactionSql | Sql, id: string): Promise<Event> => {
 	const [event] = z.array(Event).parse(
 		await db.sql`SELECT *
@@ -80,12 +88,20 @@ const getEvent = async (sql: TransactionSql | Sql, id: string): Promise<Event> =
 	if (!event) throw new ErrorUtil.HttpException(404, "Event not found.");
 	return Event.parse(event);
 };
-
+/**
+ * This function creates or updates a category in the database.
+ * If the payload contains an ID, it updates the category with the given ID.
+ * If the payload does not contain an ID, it creates a new category.
+ *
+ * @async
+ * @function createOrUpdateCategory
+ * @param {EventSchema.CreateOrUpdateCategoryPayload} payload - The payload for creating or updating a category. It must be an object that adheres to the `CreateOrUpdateCategoryPayload` schema.
+ * @returns {Promise<Category>} - Returns a promise that resolves to a Category object if the operation is successful. If the operation is an update and the category is not found, it throws an HttpException with status 404.
+ * @throws {ErrorUtil.HttpException} - Throws an HttpException if the operation is an update and the category is not found.
+ */
 const createOrUpdateCategory = async (payload: EventSchema.CreateOrUpdateCategoryPayload): Promise<Category> => {
-	const data = snakecaseKeys(payload);
-
-	if (data.id) {
-		const { id, ...rest } = data;
+	if (payload.id) {
+		const { id, ...rest } = payload;
 
 		const res = await db.sql`UPDATE "event".category
                              SET ${db.sql({ ...rest, updated_at: new Date() })}
@@ -95,9 +111,18 @@ const createOrUpdateCategory = async (payload: EventSchema.CreateOrUpdateCategor
 		return Category.parse(res[0]);
 	}
 
-	return (await db.sql`INSERT INTO "event".category ${db.sql(data)} RETURNING *;`)[0] as Category;
+	return Category.parse((await db.sql`INSERT INTO "event".category ${db.sql(payload)} RETURNING *;`)[0]);
 };
 
+/**
+ * This function retrieves a category from the database using its ID.
+ *
+ * @async
+ * @function getCategory
+ * @param {number} id - The ID of the category to retrieve.
+ * @returns {Promise<Category>} - Returns a promise that resolves to a Category object if found, otherwise it throws an HttpException with status 404.
+ * @throws {ErrorUtil.HttpException} - Throws an HttpException if the category is not found.
+ */
 const getCategory = async (id: number): Promise<Category> => {
 	const res = await db.sql`SELECT *
                            FROM "event".category
@@ -106,6 +131,15 @@ const getCategory = async (id: number): Promise<Category> => {
 	return Category.parse(res[0]);
 };
 
+/**
+ * This function deletes a category from the database using its ID.
+ *
+ * @async
+ * @function deleteCategory
+ * @param {number} id - The ID of the category to delete.
+ * @returns {Promise<Category>} - Returns a promise that resolves to a Category object representing the deleted category if found, otherwise it throws an HttpException with status 404.
+ * @throws {ErrorUtil.HttpException} - Throws an HttpException if the category is not found.
+ */
 const deleteCategory = async (id: number): Promise<Category> => {
 	const res = await db.sql`DELETE
                            FROM "event".category
@@ -115,6 +149,17 @@ const deleteCategory = async (id: number): Promise<Category> => {
 	return Category.parse(res[0]);
 };
 
+/**
+ * This function retrieves a list of categories from the database.
+ * The categories are ordered by the number of events associated with them in descending order.
+ * Pagination is applied to the results based on the provided page and limit parameters.
+ *
+ * @async
+ * @function getCategories
+ * @param {number} page - The page number for pagination. The first page is 0.
+ * @param {number} limit - The number of categories to return per page.
+ * @returns {Promise<Category[]>} - Returns a promise that resolves to an array of Category objects.
+ */
 const getCategories = async (page: number, limit: number): Promise<Category[]> =>
 	z.array(Category).parse(
 		await db.sql`
@@ -126,6 +171,19 @@ const getCategories = async (page: number, limit: number): Promise<Category[]> =
         LIMIT ${limit} OFFSET ${page * limit};`
 	);
 
+/**
+ * This function creates an event in the database.
+ * It takes a payload that adheres to the `CreateEventPayload` schema.
+ * The function creates an event, options, sources, and event categories in the database.
+ * It also fetches the categories associated with the event.
+ * The function returns an object that includes the created event, options, sources, and fetched categories.
+ *
+ * @async
+ * @function createEvent
+ * @param {EventSchema.CreateEventPayload} payload - The payload for creating an event. It must be an object that adheres to the `CreateEventPayload` schema.
+ * @returns {Promise<Event & {category: Category[]; option: Option[]; source: Source[];}>} - Returns a promise that resolves to an object that includes the created event, options, sources, and fetched categories.
+ * @throws {ErrorUtil.HttpException} - Throws an HttpException if the operation fails.
+ */
 const createEvent = async (
 	payload: EventSchema.CreateEventPayload
 ): Promise<
@@ -135,8 +193,7 @@ const createEvent = async (
 		source: Source[];
 	}
 > => {
-	const data = snakecaseKeys(payload);
-	const { option, source, category, ...event } = data;
+	const { option, source, category, ...event } = payload;
 
 	const id = createId();
 
@@ -147,6 +204,7 @@ const createEvent = async (
 			const optionRes = await sql`INSERT INTO "event".option ${sql(
 				option.map((item) => ({
 					...item,
+					price: (item.odds * event.winPrice) / 100,
 					event_id: id
 				}))
 			)} RETURNING *;`;
@@ -180,14 +238,20 @@ const createEvent = async (
            WHERE id IN (${category});`
 	]);
 
-	console.log("res", res);
-
 	return {
 		...res,
 		category: z.array(Category).parse(categoryRes)
 	};
 };
 
+/**
+ * This function retrieves the categories associated with a specific event from the database using the event's ID.
+ *
+ * @async
+ * @function getEventCategories
+ * @param {string} eventId - The ID of the event whose categories are to be retrieved.
+ * @returns {Promise<Category[]>} - Returns a promise that resolves to an array of Category objects associated with the event.
+ */
 const getEventCategories = async (eventId: string): Promise<Category[]> =>
 	z.array(Category).parse(
 		await db.sql`SELECT *
@@ -197,6 +261,14 @@ const getEventCategories = async (eventId: string): Promise<Category[]> =>
                               WHERE event_id = ${eventId});`
 	);
 
+/**
+ * This function retrieves the sources associated with a specific event from the database using the event's ID.
+ *
+ * @async
+ * @function getEventSources
+ * @param {string} eventId - The ID of the event whose sources are to be retrieved.
+ * @returns {Promise<Source[]>} - Returns a promise that resolves to an array of Source objects associated with the event.
+ */
 const getEventSources = async (eventId: string): Promise<Source[]> =>
 	z.array(Source).parse(
 		await db.sql`SELECT *
@@ -204,6 +276,31 @@ const getEventSources = async (eventId: string): Promise<Source[]> =>
                  WHERE event_id = ${eventId};`
 	);
 
+/**
+ * This function retrieves a source from the database using its ID.
+ *
+ * @async
+ * @function getSource
+ * @param {number} id - The ID of the source to retrieve.
+ * @returns {Promise<Source>} - Returns a promise that resolves to a Source object if found, otherwise it throws an HttpException with status 404.
+ * @throws {ErrorUtil.HttpException} - Throws an HttpException if the source is not found.
+ */
+const getSource = async (id: number): Promise<Source> => {
+	const res = await db.sql`SELECT *
+                           FROM "event".source
+                           WHERE id = ${id};`;
+	if (!res.length) throw new ErrorUtil.HttpException(404, "Source not found");
+	return Source.parse(res[0]);
+};
+
+/**
+ * This function retrieves the options associated with a specific event from the database using the event's ID.
+ *
+ * @async
+ * @function getEventOptions
+ * @param {string} eventId - The ID of the event whose options are to be retrieved.
+ * @returns {Promise<Option[]>} - Returns a promise that resolves to an array of Option objects associated with the event.
+ */
 const getEventOptions = async (eventId: string): Promise<Option[]> =>
 	z.array(Option).parse(
 		await db.sql`SELECT *
@@ -211,10 +308,19 @@ const getEventOptions = async (eventId: string): Promise<Option[]> =>
                  WHERE event_id = ${eventId};`
 	);
 
+/**
+ * This function updates a source in the database.
+ * It takes a payload that adheres to the `UpdateEventSourcePayload` schema.
+ * The function updates the source with the provided ID and returns the updated source.
+ *
+ * @async
+ * @function updateSource
+ * @param {EventSchema.UpdateEventSourcePayload} payload - The payload for updating a source. It must be an object that adheres to the `UpdateEventSourcePayload` schema.
+ * @returns {Promise<Source>} - Returns a promise that resolves to a Source object representing the updated source.
+ * @throws {ErrorUtil.HttpException} - Throws an HttpException with status 404 if the source is not found.
+ */
 const updateSource = async (payload: EventSchema.UpdateEventSourcePayload): Promise<Source> => {
-	const data = snakecaseKeys(payload);
-
-	const { id, ...rest } = data;
+	const { id, ...rest } = payload;
 
 	const res = await db.sql`UPDATE "event".source
                            SET ${db.sql({ ...rest, updated_at: new Date() })}
@@ -226,6 +332,15 @@ const updateSource = async (payload: EventSchema.UpdateEventSourcePayload): Prom
 	return Source.parse(res[0]);
 };
 
+/**
+ * This function deletes a source from the database using its ID.
+ *
+ * @async
+ * @function deleteSource
+ * @param {number} id - The ID of the source to delete.
+ * @returns {Promise<Source>} - Returns a promise that resolves to a Source object representing the deleted source if found, otherwise it throws an HttpException with status 404.
+ * @throws {ErrorUtil.HttpException} - Throws an HttpException if the source is not found.
+ */
 const deleteSource = async (id: number): Promise<Source> => {
 	const res = await db.sql`DELETE
                            FROM "event".source
@@ -235,18 +350,29 @@ const deleteSource = async (id: number): Promise<Source> => {
 	return Source.parse(res[0]);
 };
 
+/**
+ * This function updates the options of a specific event in the database.
+ * It takes a payload that adheres to the `UpdateEventOptionPayload` schema.
+ * The function updates the options with the provided IDs and returns the updated options.
+ *
+ * @async
+ * @function updateOptions
+ * @param {EventSchema.UpdateEventOptionPayload} payload - The payload for updating options. It must be an object that adheres to the `UpdateEventOptionPayload` schema.
+ * @returns {Promise<Option[]>} - Returns a promise that resolves to an array of Option objects representing the updated options.
+ * @throws {ErrorUtil.HttpException} - Throws an HttpException with status 400 if an invalid option ID is provided.
+ */
 const updateOptions = async (payload: EventSchema.UpdateEventOptionPayload): Promise<Option[]> => {
-	const { event_id, option } = snakecaseKeys(payload);
+	const { eventId, option } = payload;
 
 	const optionIds = (
 		(await db.sql`SELECT id
                   FROM "event".option
-                  WHERE event_id = ${event_id};`) as { id: number }[]
+                  WHERE event_id = ${eventId};`) as { id: number }[]
 	).map((item) => item.id);
 
 	if (!optionIds.every((id) => option.some((item) => item.id === id))) throw new ErrorUtil.HttpException(400, "Invalid option id");
 
-	const updateOptionsSqlPayload = option.map(({ id, name, image_url, odds }) => [id, name, image_url || null, odds]);
+	const updateOptionsSqlPayload = option.map(({ id, name, imageUrl, odds }) => [id, name, imageUrl || null, odds]);
 
 	//noinspection SqlResolve
 	const res = await db.sql`UPDATE "event".option
@@ -264,10 +390,50 @@ const updateOptions = async (payload: EventSchema.UpdateEventOptionPayload): Pro
 	return z.array(Option).parse(res);
 };
 
+/**
+ * This function retrieves a list of events from the database based on the provided filters.
+ * The filters include startAt, endAt, category, status, search, token, and chain.
+ * The function constructs a SQL query based on the provided filters and executes it.
+ * The function returns a promise that resolves to an array of Event objects that match the provided filters.
+ *
+ * @async
+ * @function getEvents
+ * @param {EventSchema.getEventsPayload} payload - The payload for retrieving events. It must be an object that adheres to the `getEventsPayload` schema.
+ * @returns {Promise<Event[]>} - Returns a promise that resolves to an array of Event objects.
+ * @throws {Error} - Throws an error if the SQL query fails.
+ */
+const getEvents = async (payload: EventSchema.getEventsPayload): Promise<Event[]> => {
+	const { startAt, endAt, category, status, search, token, chain } = payload;
+
+	const res = await db.sql`
+      SELECT *
+      FROM "event".event ${startAt || endAt || category || status || search || token || chain ? db.sql`WHERE true` : db.sql``} ${startAt ? db.sql`AND start_at >= ${startAt}` : db.sql``} ${endAt ? db.sql`AND end_at <= ${endAt}` : db.sql``}
+          ${category ? db.sql`AND id IN (SELECT event_id FROM "event".event_category WHERE category_id IN (${db.sql(category)}))` : db.sql``}
+          ${status ? db.sql`AND status = ${status}` : db.sql``}
+          ${search ? db.sql`AND name ILIKE ${`%${search}%`} OR description ILIKE ${`%${search}%`}` : db.sql``}
+          ${token ? db.sql`AND token = ${token}` : db.sql``}
+          ${chain ? db.sql`AND chain = ${chain}` : db.sql``};`;
+
+	return z.array(Event).parse(res);
+};
+
+/**
+ * Flag to prevent multiple instances of the changeEventStatus function from running concurrently.
+ */
 let changeEventStatusRunning = false;
+
+/**
+ * This function changes the status of events in the database based on the current time.
+ * It sets the status of an event to 'live' if the current time is between the event's start and end times and the event's status is not already 'live'.
+ * It sets the status of an event to 'completed' if the current time is after the event's end time and the event's status is not already 'completed'.
+ * The function uses a lock to ensure that updates to event statuses are synchronous with respect to the matching queue.
+ * If an error occurs during the execution of the function, it logs the error and resets the changeEventStatusRunning flag to false.
+ *
+ * @async
+ * @function changeEventStatus
+ */
 const changeEventStatus = async () => {
 	try {
-		//The SQL statement is structured this way, rather than using a single query, to achieve synchronous updates of event statuses with respect to the matching queue.
 		if (changeEventStatusRunning) return;
 		changeEventStatusRunning = true;
 
@@ -298,10 +464,18 @@ const changeEventStatus = async () => {
 	}
 };
 
+/**
+ * This function calls the changeEventStatus function every 5 seconds.
+ */
 setInterval(changeEventStatus, 5 * 1000);
 
+//todo update event, media libray, banners, //update category
+
+//updatable, name, description, info, imageUrl, startAt, endAt, frozen, optionWon, platformLiquidityLeft, minLiquidityPercentage, maxLiquidityPercentage, liquidityInBetween, platformFeesPercentage, slippage,
+// can't update startAt, endAt, option of completed event
+//	Same for frozen
+
 export {
-	BetType,
 	EventStatus,
 	createEvent,
 	createOrUpdateCategory,
@@ -318,5 +492,7 @@ export {
 	Event,
 	Option,
 	Source,
-	getEvent
+	getEvent,
+	getEvents,
+	getSource
 };

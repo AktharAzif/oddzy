@@ -1,72 +1,83 @@
 import { builder } from "../../config";
-import { BetService, EventService } from "../../service";
-import { getPagination } from "../../util";
+import { EventService } from "../../service";
 import { ChainEnum, TokenEnum } from "../wallet";
-import { BetTypeEnum } from "./enum.ts";
 import {
-	CancelBetPayload,
 	CreateEventOptionInput,
 	CreateEventPayload,
 	CreateEventSourceInput,
 	CreateOrUpdateCategoryPayload,
-	PlaceBetPayload,
+	getEventsPayload,
 	UpdateEventOptionInput,
 	UpdateEventOptionPayload,
 	UpdateEventSourcePayload
 } from "./input";
-import { Bet, Category, Event, Option, Source } from "./object";
+import { Category, Event, Option, Source } from "./object";
 
-builder.queryField("getCategory", (t) =>
+builder.queryField("category", (t) =>
 	t.field({
 		type: Category,
 		args: {
-			id: t.arg.int({ required: true })
+			id: t.arg.int({ required: true, description: "The unique identifier of the category" })
 		},
-		resolve: async (_, { id }) => await EventService.getCategory(id)
+		resolve: async (_, { id }) => await EventService.getCategory(id),
+		description: "Get a category by its unique identifier"
 	})
 );
 
-builder.queryField("getCategories", (t) =>
+builder.queryField("categories", (t) =>
 	t.field({
 		type: [Category],
 		args: {
-			page: t.arg.int({ required: true, defaultValue: 1 }),
-			limit: t.arg.int({ required: true, defaultValue: 20 })
+			page: t.arg.int({
+				required: true,
+				defaultValue: 1,
+				validate: { min: 1 },
+				description: "The page number. Min 1."
+			}),
+			limit: t.arg.int({
+				required: true,
+				defaultValue: 20,
+				validate: { min: 1, max: 100 },
+				description: "The limit of categories per page. Min 1, Max 100."
+			})
 		},
-		resolve: async (_, args) => {
-			const { page, limit } = getPagination(args.page, args.limit);
-			return await EventService.getCategories(page, limit);
-		}
+		resolve: async (_, { page, limit }) => await EventService.getCategories(page - 1, limit),
+		description: "Get a list of categories"
 	})
 );
 
-builder.queryField("getEventOptions", (t) =>
+builder.queryField("options", (t) =>
 	t.field({
 		type: [Option],
 		args: {
-			eventId: t.arg.string({ required: true })
+			eventId: t.arg.string({ required: true, description: "The unique identifier of the event" })
 		},
-		resolve: async (_, { eventId }) => await EventService.getEventOptions(eventId)
+		resolve: async (_, { eventId }) => await EventService.getEventOptions(eventId),
+		description: "Get a list of options for an event"
 	})
 );
 
-builder.queryField("getEventSources", (t) =>
+builder.queryField("sources", (t) =>
 	t.field({
 		type: [Source],
 		args: {
-			eventId: t.arg.string({ required: true })
+			eventId: t.arg.string({ required: true, description: "The unique identifier of the event" })
 		},
-		resolve: async (_, { eventId }) => await EventService.getEventSources(eventId)
+		resolve: async (_, { eventId }) => await EventService.getEventSources(eventId),
+		description: "Get a list of sources for an event"
 	})
 );
 
-builder.queryField("getEventCategories", (t) =>
+//Add a single source
+
+builder.queryField("eventCategories", (t) =>
 	t.field({
 		type: [Category],
 		args: {
-			eventId: t.arg.string({ required: true })
+			eventId: t.arg.string({ required: true, description: "The unique identifier of the event" })
 		},
-		resolve: async (_, { eventId }) => await EventService.getEventCategories(eventId)
+		resolve: async (_, { eventId }) => await EventService.getEventCategories(eventId),
+		description: "Get a list of categories for an event"
 	})
 );
 
@@ -75,17 +86,25 @@ builder.mutationField("createOrUpdateCategory", (t) =>
 		type: Category,
 		authScopes: { admin: true },
 		args: {
-			id: t.arg.int(),
-			name: t.arg.string({
-				required: true
+			id: t.arg.int({
+				description: "The unique identifier of the category. If not provided, a new category will be created."
 			}),
-			description: t.arg.string(),
-			imageUrl: t.arg.string()
+			name: t.arg.string({
+				required: true,
+				description: "The name of the category"
+			}),
+			description: t.arg.string({
+				description: "The description of the category"
+			}),
+			imageUrl: t.arg.string({
+				description: "The URL of the category image"
+			})
 		},
 		validate: {
 			schema: CreateOrUpdateCategoryPayload
 		},
-		resolve: async (_, arg) => await EventService.createOrUpdateCategory(arg)
+		resolve: async (_, arg) => await EventService.createOrUpdateCategory(arg),
+		description: "Create or update a category. Only accessible to admin."
 	})
 );
 
@@ -95,10 +114,12 @@ builder.mutationField("deleteCategory", (t) =>
 		authScopes: { admin: true },
 		args: {
 			id: t.arg.int({
-				required: true
+				required: true,
+				description: "The unique identifier of the category"
 			})
 		},
-		resolve: async (_, { id }) => await EventService.deleteCategory(id)
+		resolve: async (_, { id }) => await EventService.deleteCategory(id),
+		description: "Delete a category by its unique identifier. Only accessible to admin."
 	})
 );
 
@@ -108,48 +129,78 @@ builder.mutationField("createEvent", (t) =>
 		authScopes: { admin: true },
 		args: {
 			name: t.arg.string({
-				required: true
+				required: true,
+				description: "The name of the event"
 			}),
-			description: t.arg.string(),
-			info: t.arg.string(),
-			imageUrl: t.arg.string(),
+			description: t.arg.string({
+				description: "The description of the event"
+			}),
+			info: t.arg.string({
+				description: "The info regarding the event betting options"
+			}),
+			imageUrl: t.arg.string({
+				description: "The URL of the event banner image"
+			}),
 			startAt: t.arg({
 				type: "Date",
-				required: true
+				required: true,
+				description: "The start date and time of the event"
 			}),
 			endAt: t.arg({
 				type: "Date",
-				required: true
+				required: true,
+				description: "The end date and time of the event"
 			}),
-			platformLiquidityLeft: t.arg.float({ required: true }),
-			minLiquidityPercentage: t.arg.float({ required: true }),
-			maxLiquidityPercentage: t.arg.float({ required: true }),
-			liquidityInBetween: t.arg.boolean({ required: true }),
-			platformFeesPercentage: t.arg.float({ required: true }),
-			winPrice: t.arg.float({ required: true }),
-			slippage: t.arg.float({ required: true }),
+			freezeAt: t.arg({
+				type: "Date",
+				description: "The date and time when the event will be frozen"
+			}),
+			platformLiquidityLeft: t.arg.float({
+				required: true,
+				description: "The liquidity left on the platform for auto matching"
+			}),
+			minLiquidityPercentage: t.arg.float({
+				required: true,
+				description: "The minimum liquidity percentage required for auto matching"
+			}),
+			maxLiquidityPercentage: t.arg.float({
+				required: true,
+				description: "The maximum liquidity percentage required for auto matching"
+			}),
+			liquidityInBetween: t.arg.boolean({
+				required: true,
+				description: "If true, auto matching will be done between min and max liquidity percentage"
+			}),
+			platformFeesPercentage: t.arg.float({ required: true, description: "The platform fees percentage for profits" }),
+			winPrice: t.arg.float({ required: true, description: "The price of the winning option" }),
+			slippage: t.arg.float({ required: true, description: "The slippage value for auto matching" }),
 			token: t.arg({
 				type: TokenEnum,
-				required: true
+				required: true,
+				description: "The token in which the event is to be created"
 			}),
 			chain: t.arg({
 				type: ChainEnum,
-				required: true
+				required: true,
+				description: "The chain in which the event is to be created"
 			}),
-			category: t.arg.intList({ required: true }),
+			category: t.arg.intList({ required: true, description: "List of category ids" }),
 			option: t.arg({
 				type: [CreateEventOptionInput],
-				required: true
+				required: true,
+				description: "The options for the event"
 			}),
 			source: t.arg({
 				type: [CreateEventSourceInput],
-				required: true
+				required: true,
+				description: "The sources for the event"
 			})
 		},
 		validate: {
 			schema: CreateEventPayload
 		},
-		resolve: async (_, arg) => await EventService.createEvent(arg)
+		resolve: async (_, arg) => await EventService.createEvent(arg),
+		description: "Create an event. Only accessible to admin."
 	})
 );
 
@@ -158,14 +209,15 @@ builder.mutationField("updateSource", (t) =>
 		type: Source,
 		authScopes: { admin: true },
 		args: {
-			id: t.arg.int({ required: true }),
-			name: t.arg.string({ required: true }),
-			url: t.arg.string({ required: true })
+			id: t.arg.int({ required: true, description: "The unique identifier of the source" }),
+			name: t.arg.string({ required: true, description: "The name of the source" }),
+			url: t.arg.string({ required: true, description: "The URL of the source" })
 		},
 		validate: {
 			schema: UpdateEventSourcePayload
 		},
-		resolve: async (_, arg) => await EventService.updateSource(arg)
+		resolve: async (_, arg) => await EventService.updateSource(arg),
+		description: "Update a source. Only accessible to admin."
 	})
 );
 
@@ -174,9 +226,10 @@ builder.mutationField("deleteSource", (t) =>
 		type: Source,
 		authScopes: { admin: true },
 		args: {
-			id: t.arg.int({ required: true })
+			id: t.arg.int({ required: true, description: "The unique identifier of the source" })
 		},
-		resolve: async (_, { id }) => await EventService.deleteSource(id)
+		resolve: async (_, { id }) => await EventService.deleteSource(id),
+		description: "Delete a source by its unique identifier. Only accessible to admin."
 	})
 );
 
@@ -185,53 +238,30 @@ builder.mutationField("updateOptions", (t) =>
 		type: [Option],
 		authScopes: { admin: true },
 		args: {
-			eventId: t.arg.string({ required: true }),
+			eventId: t.arg.string({ required: true, description: "The unique identifier of the event" }),
 			option: t.arg({
 				type: [UpdateEventOptionInput],
-				required: true
+				required: true,
+				description: "The options to be updated"
 			})
 		},
 		validate: {
 			schema: UpdateEventOptionPayload
 		},
-		resolve: async (_, args) => await EventService.updateOptions(args)
+		resolve: async (_, args) => await EventService.updateOptions(args),
+		description: "Update options for an event. Only accessible to admin."
 	})
 );
 
-builder.mutationField("placeBet", (t) =>
+builder.queryField("source", (t) =>
 	t.field({
-		type: Bet,
+		type: Source,
 		args: {
-			eventId: t.arg.string({ required: true }),
-			optionId: t.arg.int({ required: true }),
-			price: t.arg.float({ required: true }),
-			quantity: t.arg.int({ required: true }),
-			type: t.arg({
-				type: BetTypeEnum,
-				required: true
-			}),
-			buyBetId: t.arg.string()
+			id: t.arg.int({ required: true, description: "The unique identifier of the source" })
 		},
-		validate: {
-			schema: PlaceBetPayload
-		},
-		resolve: async (_, arg) => await BetService.placeBet("b7g7cy6louugeskg4svis6ku", arg)
+		resolve: async (_, { id }) => await EventService.getSource(id),
+		description: "Get a source by its unique identifier"
 	})
 );
 
-builder.mutationField("cancelBet", (t) =>
-	t.field({
-		type: Bet,
-		args: {
-			id: t.arg.string({ required: true }),
-			quantity: t.arg.int({ required: true }),
-			eventId: t.arg.string({ required: true })
-		},
-		validate: {
-			schema: CancelBetPayload
-		},
-		resolve: async (_, arg) => await BetService.cancelBet("b7g7cy6louugeskg4svis6ku", arg)
-	})
-);
-
-export type { CreateEventPayload, CreateOrUpdateCategoryPayload, CancelBetPayload, UpdateEventOptionPayload, UpdateEventSourcePayload, PlaceBetPayload };
+export type { CreateEventPayload, CreateOrUpdateCategoryPayload, UpdateEventOptionPayload, UpdateEventSourcePayload, getEventsPayload };
