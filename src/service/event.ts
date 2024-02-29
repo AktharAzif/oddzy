@@ -375,6 +375,9 @@ const deleteSource = async (id: number): Promise<Source> => {
 const updateOptions = async (payload: EventSchema.UpdateEventOptionPayload): Promise<Option[]> => {
 	const { eventId, option } = payload;
 
+	const event = await getEvent(db.sql, eventId);
+	if (event.status === "completed") throw new ErrorUtil.HttpException(400, "Can't update options of completed event");
+
 	const optionIds = (
 		(await db.sql`SELECT id
                   FROM "event".option
