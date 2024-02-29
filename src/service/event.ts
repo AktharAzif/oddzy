@@ -447,7 +447,7 @@ const updateEvent = async (payload: EventSchema.UpdateEventPayload): Promise<Eve
 				"Can't update startAt, endAt, frozen, freezeAt, platformFeesPercentage, platformLiquidityLeft, minLiquidityPercentage, maxLiquidityPercentage, liquidityInBetween, slippage of completed event"
 			);
 
-		if (event.resolved && optionWon) throw new ErrorUtil.HttpException(400, "Can't update winningOption of resolved event");
+		if (event.status === "completed" && optionWon) throw new ErrorUtil.HttpException(400, "Can't update winningOption of a completed event");
 
 		if (optionWon) {
 			const validOption = await sql`
