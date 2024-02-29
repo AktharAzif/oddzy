@@ -45,9 +45,9 @@ Category.implement({
 
 const Event = builder.objectRef<
 	EventService.Event & {
-		category?: EventService.Category[];
-		option?: EventService.Option[];
-		source?: EventService.Source[];
+		categories?: EventService.Category[];
+		options?: EventService.Option[];
+		sources?: EventService.Source[];
 	}
 >("Event");
 
@@ -110,19 +110,19 @@ Event.implement({
 		slippage: t.exposeFloat("slippage", {
 			description: "The slippage value for auto matching"
 		}),
-		category: t.field({
+		categories: t.field({
 			type: [Category],
-			resolve: async (parent) => parent.category || (await EventService.getEventCategories(parent.id)),
+			resolve: async (parent) => parent.categories || (await EventService.getEventCategories(parent.id)),
 			description: "The category of the event"
 		}),
-		option: t.field({
+		options: t.field({
 			type: [Option],
-			resolve: async (parent) => parent.option || (await EventService.getEventOptions(parent.id)),
+			resolve: async (parent) => parent.options || (await EventService.getEventOptions(parent.id)),
 			description: "The options of the event"
 		}),
-		source: t.field({
+		sources: t.field({
 			type: [Source],
-			resolve: async (parent) => parent.source || (await EventService.getEventSources(parent.id)),
+			resolve: async (parent) => parent.sources || (await EventService.getEventSources(parent.id)),
 			description: "The sources of the event"
 		}),
 		token: t.field({

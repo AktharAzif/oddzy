@@ -188,9 +188,9 @@ const createEvent = async (
 	payload: EventSchema.CreateEventPayload
 ): Promise<
 	Event & {
-		category: Category[];
-		option: Option[];
-		source: Source[];
+		categories: Category[];
+		options: Option[];
+		sources: Source[];
 	}
 > => {
 	const { option, source, category, ...event } = payload;
@@ -229,8 +229,8 @@ const createEvent = async (
 
 			return {
 				...Event.parse(eventRes),
-				option: z.array(Option).parse(optionRes),
-				source: z.array(Source).parse(sourceRes)
+				options: z.array(Option).parse(optionRes),
+				sources: z.array(Source).parse(sourceRes)
 			};
 		}),
 		db.sql`SELECT *
@@ -240,7 +240,7 @@ const createEvent = async (
 
 	return {
 		...res,
-		category: z.array(Category).parse(categoryRes)
+		categories: z.array(Category).parse(categoryRes)
 	};
 };
 
