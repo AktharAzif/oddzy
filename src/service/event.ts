@@ -487,15 +487,16 @@ const updateEvent = async (payload: EventSchema.UpdateEventPayload): Promise<Eve
  * @param {string} eventId - The ID of the event whose categories are to be updated.
  * @param {number[]} category - An array of category IDs that should be associated with the event after the update.
  */
-const updateEventCategories = async (eventId: string, category: number[]) => {
+const updateEventCategories = async (eventId: string, categories: number[]) => {
 	await db.sql.begin(async (sql) => {
 		// Not deleting because we need the time the category is added
 		const currentCategories = await sql`SELECT category_id
                                         FROM "event".event_category
                                         WHERE event_id = ${eventId};`;
-		const currentCategoriesArray = currentCategories.map((item) => Number(item.category_id));
-		const toDelete = currentCategoriesArray.filter((item) => !category.includes(item));
-		const toAdd = category.filter((item) => !currentCategoriesArray.includes(item));
+		const currentCategoriesArray = currentCategories.map((item) => Number(item.categoryId));
+
+		const toDelete = currentCategoriesArray.filter((item) => !categories.includes(item));
+		const toAdd = categories.filter((item) => !currentCategoriesArray.includes(item));
 		if (toDelete.length) {
 			await sql`DELETE
                 FROM "event".event_category
