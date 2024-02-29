@@ -402,6 +402,115 @@ const updateOptions = async (payload: EventSchema.UpdateEventOptionPayload): Pro
 };
 
 /**
+ * This function updates an event in the database.
+ * It takes a payload that adheres to the `UpdateEventPayload` schema.
+ * The function updates the event with the provided ID and returns the updated event.
+ * The function uses a lock to ensure that updates to event statuses are synchronous with respect to the matching queue.
+ * The keys of the payload object are looped through and the ones that are not equal to the event are found.
+ * If the event is completed and any of the fields that cannot be updated for a completed event are present in the payload, the function throws an HttpException with status 400.
+ * If the payload data is same as of the event, the function throws an HttpException with status 400.
+ *
+ * @async
+ * @function updateEvent
+ * @param {EventSchema.UpdateEventPayload} payload - The payload for updating an event. It must be an object that adheres to the `UpdateEventPayload` schema.
+ * @returns {Promise<Event>} - Returns a promise that resolves to an Event object representing the updated event.
+ * @throws {ErrorUtil.HttpException} - Throws an HttpException with status 400 if an invalid field is attempted to be updated.
+ */
+const updateEvent = async (payload: EventSchema.UpdateEventPayload): Promise<Event> => {
+	return await db.sql.begin(async (sql) => {
+		await sql`SELECT pg_advisory_xact_lock(hashtext(${payload.id}))`;
+
+		const event = await getEvent(sql, payload.id);
+
+		Object.keys(payload).forEach((key) => {
+			if (payload[key as keyof EventSchema.UpdateEventPayload] === event[key as keyof EventSchema.UpdateEventPayload]) {
+				delete payload[key as keyof EventSchema.UpdateEventPayload];
+			}
+		});
+
+		const { id, startAt, endAt, frozen, freezeAt, optionWon, platformLiquidityLeft, minLiquidityPercentage, maxLiquidityPercentage, liquidityInBetween, platformFeesPercentage, slippage } = payload;
+
+		if (
+			event.status === "completed" &&
+			(startAt || endAt || frozen || freezeAt || platformFeesPercentage || platformLiquidityLeft || minLiquidityPercentage || maxLiquidityPercentage || liquidityInBetween || slippage)
+		)
+			throw new ErrorUtil.HttpException(
+				400,
+				"Can't update startAt, endAt, frozen, freezeAt, platformFeesPercentage, platformLiquidityLeft, minLiquidityPercentage, maxLiquidityPercentage, liquidityInBetween, slippage of completed event"
+			);
+
+		if (event.resolved && optionWon) throw new ErrorUtil.HttpException(400, "Can't update winningOption of resolved event");
+
+		if (optionWon) {
+			const validOption = await sql`
+          SELECT id
+          FROM "event".option
+          WHERE event_id = ${id}
+            AND id = ${optionWon}`;
+			if (!validOption.length) throw new ErrorUtil.HttpException(400, "Invalid winning option");
+		}
+
+		if (event.status === "live" && startAt) throw new ErrorUtil.HttpException(400, "Can't update startAt of live event");
+
+		if (Object.keys(payload).length === 0) throw new ErrorUtil.HttpException(400, "No field to update");
+
+		const { id: _, ...data } = payload;
+
+		const sqlPayload = {
+			...data,
+			...(data.optionWon ? { status: "completed", endAt: new Date() } : {}),
+			...(data.frozen ? { freezeAt: new Date() } : {}),
+			updated_at: new Date()
+		};
+
+		const res = await sql`UPDATE "event".event
+                          SET ${db.sql(sqlPayload)}
+                          WHERE id = ${id}
+                          RETURNING *;`;
+		return Event.parse(res[0]);
+	});
+};
+
+/**
+ * This function updates the categories associated with a specific event in the database.
+ * It takes the ID of the event and an array of category IDs.
+ * The function first retrieves the current categories associated with the event.
+ * It then determines which categories need to be added and which need to be removed to match the provided array of category IDs.
+ * The function deletes the categories that need to be removed and adds the categories that need to be added.
+ * The categories are not directly deleted and re-added because we need the time the category is added.
+ *
+ * @async
+ * @function updateEventCategories
+ * @param {string} eventId - The ID of the event whose categories are to be updated.
+ * @param {number[]} category - An array of category IDs that should be associated with the event after the update.
+ */
+const updateEventCategories = async (eventId: string, category: number[]) => {
+	await db.sql.begin(async (sql) => {
+		// Not deleting because we need the time the category is added
+		const currentCategories = await sql`SELECT category_id
+                                        FROM "event".event_category
+                                        WHERE event_id = ${eventId};`;
+		const currentCategoriesArray = currentCategories.map((item) => Number(item.category_id));
+		const toDelete = currentCategoriesArray.filter((item) => !category.includes(item));
+		const toAdd = category.filter((item) => !currentCategoriesArray.includes(item));
+		if (toDelete.length) {
+			await sql`DELETE
+                FROM "event".event_category
+                WHERE event_id = ${eventId}
+                  AND category_id IN ${sql(toDelete)};`;
+		}
+		if (toAdd.length) {
+			await sql`INSERT INTO "event".event_category ${sql(
+				toAdd.map((item) => ({
+					event_id: eventId,
+					category_id: item
+				}))
+			)};`;
+		}
+	});
+};
+
+/**
  * This function retrieves a list of events from the database based on the provided filters and pagination parameters.
  * The function supports filtering by start time, end time, category, status, search term, token, and chain.
  * The function also supports pagination through the page and limit parameters.
@@ -497,12 +606,6 @@ const changeEventStatus = async () => {
  */
 setInterval(changeEventStatus, 5 * 1000);
 
-//todo update event, media libray, banners, //update category
-
-//updatable, name, description, info, imageUrl, startAt, endAt, frozen, optionWon, platformLiquidityLeft, minLiquidityPercentage, maxLiquidityPercentage, liquidityInBetween, platformFeesPercentage, slippage,
-// can't update startAt, endAt, option of completed event
-//	Same for frozen
-
 export {
 	EventStatus,
 	createEvent,
@@ -522,5 +625,7 @@ export {
 	Source,
 	getEvent,
 	getEvents,
-	getSource
+	getSource,
+	updateEvent,
+	updateEventCategories
 };

@@ -26,3 +26,5 @@ const server = Bun.serve({
 });
 
 console.info(`Server is running on ${new URL(yoga.graphqlEndpoint, server.url)}`);
+
+//todo  media libray, banners,

@@ -10,6 +10,7 @@ import {
 	getEventsPayload,
 	UpdateEventOptionInput,
 	UpdateEventOptionPayload,
+	UpdateEventPayload,
 	UpdateEventSourcePayload
 } from "./input";
 import { Category, CategoryPaginatedResponse, Event, EventPaginatedResponse, EventStatusEnum, Option, Source } from "./object";
@@ -321,4 +322,96 @@ builder.queryField("events", (t) =>
 	})
 );
 
-export type { CreateEventPayload, CreateOrUpdateCategoryPayload, UpdateEventOptionPayload, UpdateEventSourcePayload, getEventsPayload, CategoryPaginatedResponse, EventPaginatedResponse };
+builder.mutationField("updateEventCategories", (t) =>
+	t.field({
+		type: "Boolean",
+		authScopes: { admin: true },
+		args: {
+			id: t.arg.string({ required: true, description: "The unique identifier of the event" }),
+			categories: t.arg.intList({ required: true, description: "List of category ids" })
+		},
+		resolve: async (_, { id, categories }) => {
+			await EventService.updateEventCategories(id, categories);
+			return true;
+		},
+		description: "Update categories for an event. Only accessible to admin."
+	})
+);
+
+builder.mutationField("updateEvent", (t) =>
+	t.field({
+		type: Event,
+		authScopes: { admin: true },
+		args: {
+			id: t.arg.string({ required: true, description: "The unique identifier of the event" }),
+			name: t.arg.string({
+				required: true,
+				description: "The name of the event"
+			}),
+			description: t.arg.string({
+				description: "The description of the event"
+			}),
+			info: t.arg.string({
+				description: "The info regarding the event betting options"
+			}),
+			imageUrl: t.arg.string({
+				description: "The URL of the event banner image"
+			}),
+			startAt: t.arg({
+				type: "Date",
+				required: true,
+				description: "The start date and time of the event"
+			}),
+			endAt: t.arg({
+				type: "Date",
+				required: true,
+				description: "The end date and time of the event"
+			}),
+			frozen: t.arg.boolean({
+				required: true,
+				description: "The status of the event"
+			}),
+			freezeAt: t.arg({
+				type: "Date",
+				description: "The date and time when the event will be frozen"
+			}),
+			optionWon: t.arg.int({
+				description: "The option id which won"
+			}),
+			platformLiquidityLeft: t.arg.float({
+				required: true,
+				description: "The liquidity left on the platform for auto matching"
+			}),
+			minLiquidityPercentage: t.arg.float({
+				required: true,
+				description: "The minimum liquidity percentage required for auto matching"
+			}),
+			maxLiquidityPercentage: t.arg.float({
+				required: true,
+				description: "The maximum liquidity percentage required for auto matching"
+			}),
+			liquidityInBetween: t.arg.boolean({
+				required: true,
+				description: "If true, auto matching will be done between min and max liquidity percentage"
+			}),
+			platformFeesPercentage: t.arg.float({ required: true, description: "The platform fees percentage for profits" }),
+			slippage: t.arg.float({ required: true, description: "The slippage value for auto matching" })
+		},
+		validate: {
+			schema: UpdateEventPayload
+		},
+		resolve: async (_, arg) => await EventService.updateEvent(arg),
+		description: "Update an event. Only accessible to admin."
+	})
+);
+
+export type {
+	CreateEventPayload,
+	CreateOrUpdateCategoryPayload,
+	UpdateEventOptionPayload,
+	UpdateEventSourcePayload,
+	getEventsPayload,
+	CategoryPaginatedResponse,
+	EventPaginatedResponse,
+	UpdateEventPayload
+};

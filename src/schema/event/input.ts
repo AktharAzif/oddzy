@@ -21,15 +21,15 @@ const CreateEventPayload = z
 		name: z.string(),
 		description: z.string().nullish(),
 		info: z.string().nullish(),
-		imageUrl: z.string().nullish(),
+		imageUrl: z.string().url().nullish(),
 		startAt: z.date(),
 		endAt: z.date(),
 		freezeAt: z.date().nullish(),
 		platformLiquidityLeft: z.number().min(0),
-		minLiquidityPercentage: z.number().min(0),
-		maxLiquidityPercentage: z.number().min(0),
+		minLiquidityPercentage: z.number().min(0).max(100),
+		maxLiquidityPercentage: z.number().min(0).max(100),
 		liquidityInBetween: z.boolean(),
-		platformFeesPercentage: z.number().min(0),
+		platformFeesPercentage: z.number().min(0).max(100),
 		winPrice: z.number().positive(),
 		slippage: z.number().min(0),
 		token: WalletService.Token,
@@ -67,29 +67,45 @@ const CreateEventPayload = z
 	.refine(({ token, chain }) => WalletService.TokenCombination.some((item) => item.token === token && item.chain === chain), {
 		message: "Invalid token and chain combination. Allowed combinations are: " + WalletService.TokenCombination.map((item) => `${item.token} - ${item.chain}`).join(", "),
 		path: ["token", "chain"]
+	})
+	.refine(({ minLiquidityPercentage, maxLiquidityPercentage }) => minLiquidityPercentage <= maxLiquidityPercentage, {
+		message: "minLiquidityPercentage must be less than or equal to minLiquidityPercentage",
+		path: ["minLiquidityPercentage", "maxLiquidityPercentage"]
 	});
+
 type CreateEventPayload = z.infer<typeof CreateEventPayload>;
 
 /**
  * This is a Zod schema for validating the payload when updating an event.
  */
-const UpdateEventPayload = z.object({
-	id: z.string(),
-	name: z.string(),
-	description: z.string().nullish(),
-	info: z.string().nullish(),
-	imageUrl: z.string().nullish(),
-	startAt: z.date(),
-	endAt: z.date(),
-	frozen: z.boolean(),
-	freezeAt: z.date().nullish(),
-	platformLiquidityLeft: z.number().min(0),
-	minLiquidityPercentage: z.number().min(0),
-	maxLiquidityPercentage: z.number().min(0),
-	liquidityInBetween: z.boolean(),
-	platformFeesPercentage: z.number().min(0),
-	slippage: z.number().min(0)
-});
+const UpdateEventPayload = z
+	.object({
+		id: z.string(),
+		name: z.string(),
+		description: z.string().nullish(),
+		info: z.string().nullish(),
+		imageUrl: z.string().url().nullish(),
+		startAt: z.date(),
+		endAt: z.date(),
+		frozen: z.boolean(),
+		freezeAt: z.date().nullish(),
+		optionWon: z.number().nullish(),
+		platformLiquidityLeft: z.number().min(0),
+		minLiquidityPercentage: z.number().min(0).max(100),
+		maxLiquidityPercentage: z.number().min(0).max(100),
+		liquidityInBetween: z.boolean(),
+		platformFeesPercentage: z.number().min(0).max(100),
+		slippage: z.number().min(0)
+	})
+	.refine(({ startAt, endAt }) => startAt < endAt, {
+		message: "Start date must be less than end date",
+		path: ["startAt", "endAt"]
+	})
+	.refine(({ minLiquidityPercentage, maxLiquidityPercentage }) => minLiquidityPercentage <= maxLiquidityPercentage, {
+		message: "minLiquidityPercentage must be less than or equal to minLiquidityPercentage",
+		path: ["minLiquidityPercentage", "maxLiquidityPercentage"]
+	});
+
 type UpdateEventPayload = z.infer<typeof UpdateEventPayload>;
 
 /**
