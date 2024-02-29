@@ -1,4 +1,4 @@
-import { builder } from "../../config";
+import { builder, db } from "../../config";
 import { EventService } from "../../service";
 import { ChainEnum, TokenEnum } from "../wallet";
 import {
@@ -11,7 +11,7 @@ import {
 	UpdateEventOptionPayload,
 	UpdateEventSourcePayload
 } from "./input";
-import { Category, Event, Option, Source } from "./object";
+import { Category, Event, EventStatusEnum, Option, Source } from "./object";
 
 builder.queryField("category", (t) =>
 	t.field({
@@ -261,6 +261,52 @@ builder.queryField("source", (t) =>
 		},
 		resolve: async (_, { id }) => await EventService.getSource(id),
 		description: "Get a source by its unique identifier"
+	})
+);
+
+builder.queryField("event", (t) =>
+	t.field({
+		type: Event,
+		args: {
+			id: t.arg.string({ required: true, description: "The unique identifier of the event" })
+		},
+		resolve: async (_, { id }) => await EventService.getEvent(db.sql, id),
+		description: "Get an event by its unique identifier"
+	})
+);
+
+builder.queryField("events", (t) =>
+	t.field({
+		type: [Event],
+		args: {
+			startAt: t.arg({
+				type: "Date",
+				description: "The start date and time of the event"
+			}),
+			endAt: t.arg({
+				type: "Date",
+				description: "The end date and time of the event"
+			}),
+			category: t.arg.intList({ description: "List of category ids" }),
+			status: t.arg({
+				type: EventStatusEnum,
+				description: "The status of the event"
+			}),
+			search: t.arg.string({ description: "The search string" }),
+			token: t.arg({
+				type: TokenEnum,
+				description: "The token in which the event is to be fetched"
+			}),
+			chain: t.arg({
+				type: ChainEnum,
+				description: "The chain in which the event is to be fetched"
+			})
+		},
+		validate: {
+			schema: getEventsPayload
+		},
+		resolve: async (_, args) => await EventService.getEvents(args),
+		description: "Get a list of events"
 	})
 );
 
