@@ -82,9 +82,9 @@ type Event = z.infer<typeof Event>;
  */
 const getEvent = async (sql: TransactionSql | Sql, id: string): Promise<Event> => {
 	const [event] = z.array(Event).parse(
-		await db.sql`SELECT *
-                 FROM "event".event
-                 WHERE id = ${id};`
+		await sql`SELECT *
+              FROM "event".event
+              WHERE id = ${id};`
 	);
 	if (!event) throw new ErrorUtil.HttpException(404, "Event not found.");
 	return Event.parse(event);
@@ -490,7 +490,7 @@ const updateEvent = async (payload: EventSchema.UpdateEventPayload): Promise<Eve
  * @async
  * @function updateEventCategories
  * @param {string} eventId - The ID of the event whose categories are to be updated.
- * @param {number[]} category - An array of category IDs that should be associated with the event after the update.
+ * @param {number[]} categories - An array of category IDs that should be associated with the event after the update.
  */
 const updateEventCategories = async (eventId: string, categories: number[]) => {
 	await db.sql.begin(async (sql) => {
