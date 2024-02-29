@@ -339,29 +339,28 @@ const getLinkedWalletByAddress = async (address: string): Promise<LinkedWallet |
  * @param {string} userId - The ID of the user who is verifying the signing message.
  * @param {ChainType} chain - The type of the chain where the user's wallet resides.
  * @param {string} nonce - The nonce that was included in the signing message.
+ * @param {string} wallet - The wallet used to sign the message.
  * @param {string} signature - The signature of the signing message.
  * @returns {Promise<LinkedWallet>} - A promise that resolves to the linked wallet if the verification is successful.
  * @throws {ErrorUtil.HttpException} - If the signing message is not found, if the signature is invalid, or if the wallet is already linked to another account or to the same account.
  */
-const verifyMessage = async (userId: string, chain: ChainType, nonce: string, signature: string): Promise<LinkedWallet> => {
+const verifyMessage = async (userId: string, chain: ChainType, nonce: string, wallet: string, signature: string): Promise<LinkedWallet> => {
 	const message = await redis.get(`signing_message:${userId}:${chain}:${nonce}`);
 	if (!message) throw new ErrorUtil.HttpException(400, "Signing message not found or expired.");
 
 	let signedWallet: string;
 
-	try {
-		if (chain === "evm") signedWallet = ethers.verifyMessage(message, signature);
-		else {
-			const publicKey = Keypair.fromSecretKey(base58.decode(signature)).publicKey;
-			const encodedMessage = new TextEncoder().encode(message);
-			const walletIsSigner = nacl.sign.detached.verify(encodedMessage, base58.decode(signature), publicKey.toBuffer());
-			if (!walletIsSigner) throw new ErrorUtil.HttpException(400, "Invalid signature.");
-			signedWallet = publicKey.toBase58();
-		}
-		await redis.del(`signing_message:${userId}:${chain}:${nonce}`);
-	} catch {
-		throw new ErrorUtil.HttpException(400, "Invalid signature.");
+	if (chain === "evm") {
+		signedWallet = ethers.verifyMessage(message, signature);
+		if (signedWallet !== ethers.getAddress(wallet)) throw new ErrorUtil.HttpException(400, "Wallet address does not match signature.");
+	} else {
+		const publicKey = new PublicKey(wallet);
+		const encodedMessage = new TextEncoder().encode(message);
+		const walletIsSigner = nacl.sign.detached.verify(encodedMessage, base58.decode(signature), publicKey.toBuffer());
+		if (!walletIsSigner) throw new ErrorUtil.HttpException(400, "Wallet address does not match signature.");
+		signedWallet = publicKey.toBase58();
 	}
+	await redis.del(`signing_message:${userId}:${chain}:${nonce}`);
 
 	const linkedWallet = await getLinkedWalletByAddress(signedWallet);
 

@@ -81,10 +81,11 @@ builder.mutationField("linkWallet", (t) =>
 				required: true,
 				description: "The chain type of the wallet. Either EVM or Solana."
 			}),
+			wallet: t.arg.string({ required: true, description: "The wallet address used to sign the message." }),
 			signature: t.arg.string({ required: true, description: "The signed message." }),
 			nonce: t.arg.string({ required: true, description: "The nonce received from the signing message." })
 		},
-		resolve: async (_, { signature, nonce, chainType }, { user }) => await WalletService.verifyMessage((user as UserService.User).id, chainType, nonce, signature),
+		resolve: async (_, { signature, nonce, chainType, wallet }, { user }) => await WalletService.verifyMessage((user as UserService.User).id, chainType, nonce, wallet, signature),
 		description: "Link a wallet to the user's account."
 	})
 );
