@@ -408,7 +408,7 @@ const getEvents = async (payload: EventSchema.getEventsPayload): Promise<Event[]
 	const res = await db.sql`
       SELECT *
       FROM "event".event ${startAt || endAt || category || status || search || token || chain ? db.sql`WHERE true` : db.sql``} ${startAt ? db.sql`AND start_at >= ${startAt}` : db.sql``} ${endAt ? db.sql`AND end_at <= ${endAt}` : db.sql``}
-          ${category ? db.sql`AND id IN (SELECT event_id FROM "event".event_category WHERE category_id IN (${db.sql(category)}))` : db.sql``}
+          ${category ? db.sql`AND id IN (SELECT event_id FROM "event".event_category WHERE category_id IN ${db.sql(category)})` : db.sql``}
           ${status ? db.sql`AND status = ${status}` : db.sql``}
           ${search ? db.sql`AND name ILIKE ${`%${search}%`} OR description ILIKE ${`%${search}%`}` : db.sql``}
           ${token ? db.sql`AND token = ${token}` : db.sql``}

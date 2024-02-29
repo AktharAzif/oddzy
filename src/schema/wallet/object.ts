@@ -170,4 +170,25 @@ SigningMessageResponse.implement({
 	description: "The response object for the signing message."
 });
 
-export { ChainEnum, ChainType, TokenEnum, Balance, LinkedWallet, Transaction, SigningMessageResponse };
+const TokenCombination = builder.objectRef<{
+	token: WalletService.Token;
+	chain: WalletService.Chain;
+}>("TokenCombination");
+
+TokenCombination.implement({
+	fields: (t) => ({
+		token: t.field({
+			type: TokenEnum,
+			resolve: (parent) => parent.token,
+			description: "The token name."
+		}),
+		chain: t.field({
+			type: ChainEnum,
+			resolve: (parent) => parent.chain,
+			description: "The chain name."
+		})
+	}),
+	description: "The response object for the token combination."
+});
+
+export { ChainEnum, ChainType, TokenEnum, Balance, LinkedWallet, Transaction, SigningMessageResponse, TokenCombination };

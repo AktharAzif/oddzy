@@ -1,7 +1,7 @@
 import { builder, rpcProviders } from "../../config";
 import { UserService, WalletService } from "../../service";
 import { ErrorUtil } from "../../util";
-import { Balance, ChainEnum, ChainType, LinkedWallet, SigningMessageResponse, TokenEnum, Transaction } from "./object.ts";
+import { Balance, ChainEnum, ChainType, LinkedWallet, SigningMessageResponse, TokenCombination, TokenEnum, Transaction } from "./object.ts";
 
 builder.queryField("balance", (t) =>
 	t.field({
@@ -140,6 +140,14 @@ builder.mutationField("depositSplToken", (t) =>
 			return await WalletService.verifySplTokenDeposit((user as UserService.User).id, token, hash);
 		},
 		description: "Verify the deposit of a SPL token to the user's account."
+	})
+);
+
+builder.queryField("tokenCombinations", (t) =>
+	t.field({
+		type: [TokenCombination],
+		resolve: () => WalletService.TokenCombination,
+		description: "Fetches the token combinations."
 	})
 );
 
