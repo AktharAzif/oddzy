@@ -420,18 +420,23 @@ const updateOptions = async (payload: EventSchema.UpdateEventOptionPayload): Pro
  * @throws {ErrorUtil.HttpException} - Throws an HttpException with status 400 if an invalid field is attempted to be updated.
  */
 const updateEvent = async (payload: EventSchema.UpdateEventPayload): Promise<Event> => {
+	const { id } = payload;
 	return await db.sql.begin(async (sql) => {
-		await sql`SELECT pg_advisory_xact_lock(hashtext(${payload.id}))`;
+		await sql`SELECT pg_advisory_xact_lock(hashtext(${id}))`;
 
-		const event = await getEvent(sql, payload.id);
+		const event = await getEvent(sql, id);
 
 		Object.keys(payload).forEach((key) => {
-			if (payload[key as keyof EventSchema.UpdateEventPayload] === event[key as keyof EventSchema.UpdateEventPayload]) {
-				delete payload[key as keyof EventSchema.UpdateEventPayload];
+			const keyName = key as keyof EventSchema.UpdateEventPayload;
+			const payloadValue = payload[keyName] instanceof Date ? (payload[keyName] as Date).toISOString() : payload[keyName];
+			const eventValue = event[keyName] instanceof Date ? (event[keyName] as Date).toISOString() : event[keyName];
+
+			if (payloadValue === eventValue) {
+				delete payload[keyName];
 			}
 		});
 
-		const { id, startAt, endAt, frozen, freezeAt, optionWon, platformLiquidityLeft, minLiquidityPercentage, maxLiquidityPercentage, liquidityInBetween, platformFeesPercentage, slippage } = payload;
+		const { startAt, endAt, frozen, freezeAt, optionWon, platformLiquidityLeft, minLiquidityPercentage, maxLiquidityPercentage, liquidityInBetween, platformFeesPercentage, slippage } = payload;
 
 		if (
 			event.status === "completed" &&
