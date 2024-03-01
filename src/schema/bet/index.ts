@@ -1,7 +1,7 @@
 import { builder } from "../../config";
 import { BetService, UserService } from "../../service";
 import { PlaceBetPayload } from "./input.ts";
-import { Bet, BetTypeEnum } from "./object.ts";
+import { Bet, BetPaginatedResponse, BetTypeEnum } from "./object.ts";
 
 builder.mutationField("placeBet", (t) =>
 	t.field({
@@ -28,4 +28,32 @@ builder.mutationField("placeBet", (t) =>
 	})
 );
 
-export { PlaceBetPayload };
+builder.mutationField("bets", (t) =>
+	t.field({
+		authScopes: (_, __, { user }) => (user && user.access) || { admin: true },
+		type: BetPaginatedResponse,
+		args: {
+			eventId: t.arg.string({ description: "The unique identifier of the event" }),
+			page: t.arg.int({
+				required: true,
+				description: "The page number. Min 1.",
+				validate: { min: 1 },
+				defaultValue: 1
+			}),
+			limit: t.arg.int({
+				required: true,
+				description: "The number of bets per page. Min 1, Max 100.",
+				validate: { min: 1, max: 100 },
+				defaultValue: 20
+			})
+		},
+		resolve: async (_, { eventId, page, limit }, { user, admin }) => {
+			if (!admin && eventId) throw new Error("You are only authorized to access your bets");
+			const userId = user && user.id;
+			return await BetService.getBets(eventId, userId, page - 1, limit);
+		},
+		description: "Get all bets filtered by user and event. Either eventId or userId is required"
+	})
+);
+
+export { PlaceBetPayload, BetPaginatedResponse };

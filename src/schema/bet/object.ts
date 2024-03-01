@@ -70,4 +70,32 @@ const Bet = builder.objectRef<BetService.Bet>("Bet").implement({
 	description: "The bet response object"
 });
 
-export { Bet, BetTypeEnum };
+const BetPaginatedResponse = builder.objectRef<{
+	bets: BetService.Bet[];
+	total: number;
+	page: number;
+	limit: number;
+}>("BetPaginatedResponse");
+
+BetPaginatedResponse.implement({
+	fields: (t) => ({
+		bets: t.field({
+			type: [Bet],
+			resolve: (parent) => parent.bets,
+			description: "The bets"
+		}),
+		total: t.exposeInt("total", {
+			description: "The total number of bets"
+		}),
+		page: t.exposeInt("page", {
+			description: "Current page number"
+		}),
+		limit: t.exposeInt("limit", {
+			description: "The number of bets per page"
+		})
+	}),
+	description: "The paginated bet response object."
+});
+type BetPaginatedResponse = typeof BetPaginatedResponse.$inferType;
+
+export { Bet, BetTypeEnum, BetPaginatedResponse };

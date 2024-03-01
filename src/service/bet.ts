@@ -74,6 +74,47 @@ const getBet = async (sql: TransactionSql | Sql, betId: string): Promise<Bet> =>
 };
 
 /**
+ * This function retrieves bets from the database based on the provided eventId and userId.
+ * If neither eventId nor userId is provided, it throws an HttpException with status 400.
+ * The function also supports pagination through the page and limit parameters.
+ *
+ * @param {string | null} eventId - The ID of the event to retrieve bets for. Default is null.
+ * @param {string | null} userId - The ID of the user to retrieve bets for. Default is null.
+ * @param {number} page - The page number for pagination.
+ * @param {number} limit - The number of bets to retrieve per page.
+ *
+ * @returns {Promise<BetSchema.BetPaginatedResponse>} Returns a promise that resolves to a BetPaginatedResponse object.
+ * The BetPaginatedResponse object contains an array of Bet objects, the total number of bets, the current page number, and the limit.
+ *
+ * @throws {ErrorUtil.HttpException} Throws an HttpException if neither eventId nor userId is provided.
+ */
+const getBets = async (eventId: string | null = null, userId: string | null = null, page: number, limit: number): Promise<BetSchema.BetPaginatedResponse> => {
+	if (!eventId && !userId) throw new ErrorUtil.HttpException(400, "EventId or UserId is required.");
+
+	const bets = db.sql`SELECT *
+                      FROM "event".bet
+                      WHERE true
+                        AND ${eventId ? db.sql`event_id = ${eventId}` : db.sql``}
+                        AND ${userId ? db.sql`user_id = ${userId}` : db.sql``}
+                      ORDER BY created_at DESC
+                      LIMIT ${limit} OFFSET ${page * limit}`;
+	const total = db.sql`SELECT COUNT(*)
+                       FROM "event".bet
+                       WHERE true
+                         AND ${eventId ? db.sql`event_id = ${eventId}` : db.sql``}
+                         AND ${userId ? db.sql`user_id = ${userId}` : db.sql``}` as Promise<[{ count: string }]>;
+
+	const [betsRes, [totalRes]] = await Promise.all([bets, total]);
+
+	return {
+		bets: z.array(Bet).parse(betsRes),
+		total: Number(totalRes.count),
+		page: page + 1,
+		limit
+	};
+};
+
+/**
  * This function validates the selected option for a given event.
  *
  * @param {string} eventId - The ID of the event.
@@ -1015,4 +1056,4 @@ const placeBet = async (userId: string, payload: BetSchema.PlaceBetPayload): Pro
 //
 // setInterval(initEventPayout, 5 * 1000);
 //
-export { Bet, BetType, placeBet };
+export { Bet, BetType, placeBet, getBets };
