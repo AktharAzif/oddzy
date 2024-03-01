@@ -1,202 +1,336 @@
-// import { createId } from "@paralleldrive/cuid2";
-// import type { Sql, TransactionSql } from "postgres";
-// import { z } from "zod";
-// import { db } from "../config";
-// import { EventSchema } from "../schema";
-// import { ErrorUtil } from "../util";
-// import { Event, getEvent, getEventOptions, Option } from "./event.ts";
-// import { generateTxSqlPayload, getUserTokenBalance, type Transaction } from "./wallet.ts";
-//
-// const BetType = z.enum(["buy", "sell"]);
-// type BetType = z.infer<typeof BetType>;
-//
-// const Bet = z.object({
-// 	id: z.string().default(() => createId()),
-// 	eventId: z.string(),
-// 	userId: z.string().nullable().default(null),
-// 	optionId: z.coerce.number().int(),
-// 	quantity: z.coerce.number().int(),
-// 	pricePerQuantity: z.coerce.number(),
-// 	rewardAmountUsed: z.coerce.number(),
-// 	unmatchedQuantity: z.coerce.number().int(),
-// 	type: BetType,
-// 	buyBetId: z.string().nullable().default(null),
-// 	buyBetPricePerQuantity: z.coerce.number().nullable().default(null),
-// 	profit: z.coerce.number().nullable().default(null),
-// 	platformCommission: z.coerce.number().nullable().default(null),
-// 	soldQuantity: z.coerce.number().int().nullable().default(null),
-// 	createdAt: z.date().default(() => new Date()),
-// 	updatedAt: z.date().default(() => new Date())
-// });
-// type Bet = z.infer<typeof Bet>;
-//
-// const checkUserLockStatus = async (sql: TransactionSql, userId: string) => {
-// 	const [{ locked }]: [
-// 		{
-// 			locked: boolean;
-// 		}
-// 	] = await sql`SELECT pg_try_advisory_xact_lock(hashtext(${userId})) AS locked`;
-//
-// 	return !locked;
-// };
-//
-// const getBet = async (sql: TransactionSql | Sql, betId: string): Promise<Bet> => {
-// 	const [bet] = z.array(Bet).parse(
-// 		await sql`SELECT *
-//               FROM "event".bet
-//               WHERE id = ${betId}`
-// 	);
-//
-// 	if (!bet) throw new ErrorUtil.HttpException(400, "Bet not found.");
-// 	return bet;
-// };
-//
-// const validateOption = async (
-// 	eventId: string,
-// 	optionId: number
-// ): Promise<{
-// 	selectedOption: Option;
-// 	otherOption: Option;
-// }> => {
-// 	const options = await getEventOptions(eventId);
-//
-// 	const selectedOption = options.find((option) => option.id === optionId);
-// 	if (!selectedOption) throw new ErrorUtil.HttpException(400, "Invalid option id.");
-// 	const otherOption = options.find((option) => option.id !== optionId) as Option;
-//
-// 	return { selectedOption, otherOption };
-// };
-//
-// const validateEvent = async (sql: TransactionSql, eventId: string, price?: number): Promise<Event> => {
-// 	const event = await getEvent(sql, eventId);
-//
-// 	if (event.status !== "live") throw new ErrorUtil.HttpException(400, "Only live events are allowed for betting/cancelling.");
-// 	if (event.frozen) throw new ErrorUtil.HttpException(400, "Betting/Cancelling is locked for this event.");
-// 	if (price && event.winPrice < price) throw new ErrorUtil.HttpException(400, "Price per quantity is higher than the win price.");
-//
-// 	return event;
-// };
-//
-// const validateBetPrice = async (
-// 	sql: TransactionSql,
-// 	userId: string,
-// 	event: Event,
-// 	totalPrice: number
-// ): Promise<{
-// 	amount: number;
-// 	rewardAmountUsed: number;
-// }> => {
-// 	const { rewardBalance, totalBalance } = await getUserTokenBalance(sql, userId, event.token, event.chain);
-//
-// 	if (totalBalance < totalPrice) throw new ErrorUtil.HttpException(400, "Insufficient balance.");
-//
-// 	//Reward amount have priority over the main balance
-// 	const rewardAmountUsed = totalPrice < rewardBalance ? totalPrice : rewardBalance;
-// 	const amount = totalPrice - rewardAmountUsed;
-//
-// 	return { amount, rewardAmountUsed };
-// };
-//
-// const validateBuyBet = async (sql: TransactionSql, userId: string, eventId: string, selectedOption: number, buyBetId: string): Promise<Bet> => {
-// 	const [bet] = z.array(Bet).parse(
-// 		await sql`
-//         SELECT *
-//         FROM "event".bet
-//         WHERE id = ${buyBetId}
-//           AND event_id = ${eventId}
-//           AND user_id = ${userId}
-//           AND type = 'buy'
-//           AND option_id = ${selectedOption}
-// 		`
-// 	);
-//
-// 	if (!bet) throw new ErrorUtil.HttpException(400, "Invalid buy bet id.");
-//
-// 	return bet;
-// };
-//
-// const validateSellBet = async (sql: TransactionSql, totalPrice: number, quantity: number, buyBet: Bet) => {
-// 	const matchedQuantity = buyBet.quantity - buyBet.unmatchedQuantity;
-// 	if (matchedQuantity < quantity) throw new ErrorUtil.HttpException(400, "Sell quantity is higher than matched quantity.");
-//
-// 	//Sold quantity will always be a number because it's a buy bet. So, casting it as number
-// 	if (matchedQuantity - (buyBet.soldQuantity as number) < quantity) throw new ErrorUtil.HttpException(400, "Sell quantity is higher than remaining matched quantity.");
-//
-// 	//We are moving the reward amount from buy bet to sell bet to avoid double payouts
-// 	const rewardAmountUsed = totalPrice < buyBet.rewardAmountUsed ? totalPrice : buyBet.rewardAmountUsed;
-//
-// 	await sql`UPDATE "event".bet
-//             SET sold_quantity      = sold_quantity + ${quantity},
-//                 reward_amount_used = reward_amount_used - ${rewardAmountUsed},
-//                 updated_at         = ${new Date()}
-//             WHERE id = ${buyBet.id}`;
-//
-// 	return rewardAmountUsed;
-// };
-//
-// const generateInsertBetSqlPayload = (
-// 	userId: string | null,
-// 	eventId: string,
-// 	optionId: number,
-// 	pricePerQuantity: number,
-// 	rewardAmountUsed: number,
-// 	quantity: number,
-// 	type: BetType,
-// 	soldQuantity: number | null = null,
-// 	buyBetId: string | null = null,
-// 	buyBetPricePerQuantity: number | null = null,
-// 	unmatchedQuantity: number = quantity
-// ) => {
-// 	const payload = {
-// 		userId,
-// 		eventId,
-// 		optionId,
-// 		pricePerQuantity,
-// 		rewardAmountUsed,
-// 		unmatchedQuantity,
-// 		quantity,
-// 		type,
-// 		buyBetId,
-// 		soldQuantity,
-// 		buyBetPricePerQuantity
-// 	};
-//
-// 	return Bet.parse(payload);
-// };
-//
-// const addToBetQueue = async (sql: TransactionSql, bet: Bet) =>
-// 	sql`INSERT INTO "event".bet_queue
-//       VALUES (${bet.id}, ${bet.eventId})`;
-//
-// const placeBet = async (userId: string, payload: EventSchema.PlaceBetPayload): Promise<Bet> => {
-// 	const { price, quantity, eventId, type, buyBetId, optionId } = payload;
-// 	await validateOption(eventId, optionId);
-//
-// 	const totalPrice = price * quantity;
-// 	let insertBetSqlPayload: Bet;
-// 	let insertBetTxSqlPayload: Transaction;
-//
-// 	return await db.sql.begin(async (sql) => {
-// 		if (await checkUserLockStatus(sql, userId)) throw new ErrorUtil.HttpException(429, "Only one bet order is allowed at a time.");
-// 		const event = await validateEvent(sql, eventId, price);
-//
-// 		if (type === "buy") {
-// 			const { amount, rewardAmountUsed } = await validateBetPrice(sql, userId, event, totalPrice);
-// 			insertBetSqlPayload = generateInsertBetSqlPayload(userId, eventId, optionId, price, rewardAmountUsed, quantity, type, 0);
-// 			insertBetTxSqlPayload = generateTxSqlPayload(userId, "bet", -amount, -rewardAmountUsed, event.token, event.chain, null, "completed", insertBetSqlPayload.id, quantity);
-// 		} else {
-// 			if (!buyBetId) throw new ErrorUtil.HttpException(400, "Buy bet id is required for sell bet.");
-// 			const buyBet = await validateBuyBet(sql, userId, eventId, optionId, buyBetId);
-// 			const rewardAmountUsed = await validateSellBet(sql, totalPrice, quantity, buyBet);
-// 			insertBetSqlPayload = generateInsertBetSqlPayload(userId, eventId, optionId, price, rewardAmountUsed, quantity, type, null, buyBetId, buyBet.pricePerQuantity);
-// 		}
-//
-// 		const bet = Bet.parse((await sql`INSERT INTO "event".bet ${sql(insertBetSqlPayload)} RETURNING *`)[0]);
-// 		insertBetTxSqlPayload && (await sql`INSERT INTO "wallet".transaction ${sql(insertBetTxSqlPayload)}`);
-// 		await addToBetQueue(sql, bet);
-// 		return bet;
-// 	});
-// };
+import { createId } from "@paralleldrive/cuid2";
+import type { Sql, TransactionSql } from "postgres";
+import { z } from "zod";
+import { db } from "../config";
+import { BetSchema } from "../schema";
+import { ErrorUtil } from "../util";
+import { Event, getEvent, getEventOptions, Option } from "./event.ts";
+import { generateTxSqlPayload, getUserTokenBalance, type Transaction } from "./wallet.ts";
+
+const BetType = z.enum(["buy", "sell"]);
+type BetType = z.infer<typeof BetType>;
+
+const Bet = z.object({
+	id: z.string().default(() => createId()),
+	eventId: z.string(),
+	userId: z.string().nullable().default(null),
+	optionId: z.coerce.number().int(),
+	quantity: z.coerce.number().int(),
+	pricePerQuantity: z.coerce.number(),
+	rewardAmountUsed: z.coerce.number(),
+	unmatchedQuantity: z.coerce.number().int(),
+	type: BetType,
+	buyBetId: z.string().nullable().default(null),
+	buyBetPricePerQuantity: z.coerce.number().nullable().default(null),
+	profit: z.coerce.number().nullable().default(null),
+	platformCommission: z.coerce.number().nullable().default(null),
+	limitOrder: z.boolean().default(false),
+	soldQuantity: z.coerce.number().int().nullable().default(null),
+	createdAt: z.date().default(() => new Date()),
+	updatedAt: z.date().default(() => new Date())
+});
+type Bet = z.infer<typeof Bet>;
+
+/**
+ * This function checks if a user is locked or not in the database.
+ * It uses PostgreSQL's advisory lock system to prevent concurrent modifications.
+ *
+ * @param {TransactionSql} sql - The SQL transaction object.
+ * @param {string} userId - The ID of the user to check the lock status for.
+ *
+ * @returns {Promise<boolean>} Returns a promise that resolves to a boolean.
+ * The boolean is true if the user is not locked and false otherwise.
+ */
+const checkUserLockStatus = async (sql: TransactionSql, userId: string): Promise<boolean> => {
+	const [{ locked }]: [
+		{
+			locked: boolean;
+		}
+	] = await sql`SELECT pg_try_advisory_xact_lock(hashtext(${userId})) AS locked`;
+
+	return !locked;
+};
+
+/**
+ * This function retrieves a bet from the database using its ID.
+ *
+ * @param {TransactionSql | Sql} sql - The SQL transaction object or SQL object.
+ * @param {string} betId - The ID of the bet to retrieve.
+ *
+ * @returns {Promise<Bet>} Returns a promise that resolves to a Bet object.
+ * If the bet is not found, it throws an HttpException with status 400.
+ *
+ * @throws {ErrorUtil.HttpException} Throws an HttpException if the bet is not found.
+ */
+const getBet = async (sql: TransactionSql | Sql, betId: string): Promise<Bet> => {
+	const [bet] = z.array(Bet).parse(
+		await sql`SELECT *
+              FROM "event".bet
+              WHERE id = ${betId}`
+	);
+
+	if (!bet) throw new ErrorUtil.HttpException(400, "Bet not found.");
+	return bet;
+};
+
+/**
+ * This function validates the selected option for a given event.
+ *
+ * @param {string} eventId - The ID of the event.
+ * @param {number} optionId - The ID of the selected option.
+ *
+ * @returns {Promise<{selectedOption: Option, otherOption: Option}>} Returns a promise that resolves to an object containing the selected option and the other option.
+ * The selected option is the option with the provided optionId.
+ * The other option is the option that does not have the provided optionId.
+ *
+ * @throws {ErrorUtil.HttpException} Throws an HttpException if the selected option is not found in the event.
+ */
+const validateOption = async (
+	eventId: string,
+	optionId: number
+): Promise<{
+	selectedOption: Option;
+	otherOption: Option;
+}> => {
+	const options = await getEventOptions(eventId);
+
+	const selectedOption = options.find((option) => option.id === optionId);
+	if (!selectedOption) throw new ErrorUtil.HttpException(400, "Invalid option id.");
+	const otherOption = options.find((option) => option.id !== optionId) as Option;
+
+	return { selectedOption, otherOption };
+};
+
+/**
+ * This function validates an event for betting or cancelling.
+ *
+ * @param {TransactionSql} sql - The SQL transaction object.
+ * @param {string} eventId - The ID of the event to validate.
+ * @param {number} [price] - The price per quantity for the bet. Optional.
+ *
+ * @returns {Promise<Event>} Returns a promise that resolves to an Event object.
+ * If the event is not live, it throws an HttpException with status 400.
+ * If the event is frozen, it throws an HttpException with status 400.
+ * If the price per quantity is higher than the win price, it throws an HttpException with status 400.
+ *
+ * @throws {ErrorUtil.HttpException} Throws an HttpException if the event is not live, is frozen, or the price per quantity is higher than the win price.
+ */
+const validateEvent = async (sql: TransactionSql, eventId: string, price?: number): Promise<Event> => {
+	const event = await getEvent(sql, eventId);
+
+	if (event.status !== "live") throw new ErrorUtil.HttpException(400, "Only live events are allowed for betting/cancelling.");
+	if (event.frozen) throw new ErrorUtil.HttpException(400, "Betting/Cancelling is locked for this event.");
+	if (price && event.winPrice < price) throw new ErrorUtil.HttpException(400, "Price per quantity is higher than the win price.");
+
+	return event;
+};
+
+/**
+ * This function validates the total price of a bet against the user's balance.
+ * It prioritizes the use of the user's reward balance over their main balance.
+ *
+ * @param {TransactionSql} sql - The SQL transaction object.
+ * @param {string} userId - The ID of the user placing the bet.
+ * @param {Event} event - The event object related to the bet.
+ * @param {number} totalPrice - The total price of the bet.
+ *
+ * @returns {Promise<{amount: number, rewardAmountUsed: number}>} Returns a promise that resolves to an object containing the amount and rewardAmountUsed.
+ * The amount is the total price minus the reward amount used.
+ * The rewardAmountUsed is the amount of the reward balance used for the bet, which is either the total price or the reward balance, whichever is smaller.
+ *
+ * @throws {ErrorUtil.HttpException} Throws an HttpException if the user's total balance (reward balance + main balance) is less than the total price of the bet.
+ */
+const validateBetPrice = async (
+	sql: TransactionSql,
+	userId: string,
+	event: Event,
+	totalPrice: number
+): Promise<{
+	amount: number;
+	rewardAmountUsed: number;
+}> => {
+	const { rewardBalance, totalBalance } = await getUserTokenBalance(sql, userId, event.token, event.chain);
+
+	if (totalBalance < totalPrice) throw new ErrorUtil.HttpException(400, "Insufficient balance.");
+
+	const rewardAmountUsed = totalPrice < rewardBalance ? totalPrice : rewardBalance;
+	const amount = totalPrice - rewardAmountUsed;
+
+	return { amount, rewardAmountUsed };
+};
+
+/**
+ * This function validates a buy bet for a given user and event.
+ *
+ * @param {TransactionSql} sql - The SQL transaction object.
+ * @param {string} userId - The ID of the user placing the bet.
+ * @param {string} eventId - The ID of the event related to the bet.
+ * @param {number} selectedOption - The ID of the selected option for the bet.
+ * @param {string} buyBetId - The ID of the buy bet to validate.
+ *
+ * @returns {Promise<Bet>} Returns a promise that resolves to a Bet object.
+ * If the bet is not found or does not meet the validation criteria, it throws an HttpException with status 400.
+ *
+ * @throws {ErrorUtil.HttpException} Throws an HttpException if the bet is not found or does not meet the validation criteria.
+ */
+const validateBuyBet = async (sql: TransactionSql, userId: string, eventId: string, selectedOption: number, buyBetId: string): Promise<Bet> => {
+	const [bet] = z.array(Bet).parse(
+		await sql`
+        SELECT *
+        FROM "event".bet
+        WHERE id = ${buyBetId}
+          AND event_id = ${eventId}
+          AND user_id = ${userId}
+          AND type = 'buy'
+          AND option_id = ${selectedOption}
+		`
+	);
+
+	if (!bet) throw new ErrorUtil.HttpException(400, "Invalid buy bet id.");
+
+	return bet;
+};
+
+/**
+ * This function validates a sell bet for a given user and event.
+ *
+ * @param {TransactionSql} sql - The SQL transaction object.
+ * @param {number} totalPrice - The total price of the sell bet.
+ * @param {number} quantity - The quantity of the sell bet.
+ * @param {Bet} buyBet - The buy bet object related to the sell bet.
+ *
+ * @returns {Promise<number>} Returns a promise that resolves to a number representing the reward amount used.
+ * Sold quantity will always be a number because it's a buy bet. So, casting it as number
+ * Reward amount used is moved from buy bet to sell bet to avoid double payouts
+ *
+ * @throws {ErrorUtil.HttpException} Throws an HttpException if the sell quantity is higher than matched quantity or remaining matched quantity.
+ */
+const validateSellBet = async (sql: TransactionSql, totalPrice: number, quantity: number, buyBet: Bet): Promise<number> => {
+	const matchedQuantity = buyBet.quantity - buyBet.unmatchedQuantity;
+	if (matchedQuantity < quantity) throw new ErrorUtil.HttpException(400, "Sell quantity is higher than matched quantity.");
+
+	if (matchedQuantity - (buyBet.soldQuantity as number) < quantity) throw new ErrorUtil.HttpException(400, "Sell quantity is higher than remaining matched quantity.");
+
+	const rewardAmountUsed = totalPrice < buyBet.rewardAmountUsed ? totalPrice : buyBet.rewardAmountUsed;
+
+	await sql`UPDATE "event".bet
+            SET sold_quantity      = sold_quantity + ${quantity},
+                reward_amount_used = reward_amount_used - ${rewardAmountUsed},
+                updated_at         = ${new Date()}
+            WHERE id = ${buyBet.id}`;
+
+	return rewardAmountUsed;
+};
+
+/**
+ * This function generates a payload for inserting a bet into the database.
+ *
+ * @param {string | null} userId - The ID of the user placing the bet. Null for platform bets.
+ * @param {string} eventId - The ID of the event related to the bet.
+ * @param {number} optionId - The ID of the selected option for the bet.
+ * @param {number} pricePerQuantity - The price per quantity for the bet.
+ * @param {number} rewardAmountUsed - The amount of the reward balance used for the bet.
+ * @param {number} quantity - The quantity of the bet.
+ * @param {BetType} type - The type of the bet (buy or sell).
+ * @param {boolean} [limitOrder=false] - Whether the bet is a limit order. Default is false.
+ * @param {number | null} [soldQuantity=null] - The quantity of the bet that has been sold. Null for sell orders.
+ * @param {string | null} [buyBetId=null] - The ID of the buy bet related to the sell bet. Null for buy bets.
+ * @param {number | null} [buyBetPricePerQuantity=null] - The price per quantity of the buy bet related to the sell bet. Null for buy bets.
+ * @param {number} [unmatchedQuantity=quantity] - The quantity of the bet that has not been matched. Default is the total quantity of the bet.
+ *
+ * @returns {Bet} Returns a Bet object.
+ * The Bet object is validated using the Bet zod schema.
+ */
+const generateInsertBetSqlPayload = (
+	userId: string | null,
+	eventId: string,
+	optionId: number,
+	pricePerQuantity: number,
+	rewardAmountUsed: number,
+	quantity: number,
+	type: BetType,
+	limitOrder: boolean = false,
+	soldQuantity: number | null = null,
+	buyBetId: string | null = null,
+	buyBetPricePerQuantity: number | null = null,
+	unmatchedQuantity: number = quantity
+): Bet => {
+	const payload = {
+		userId,
+		eventId,
+		optionId,
+		pricePerQuantity,
+		rewardAmountUsed,
+		unmatchedQuantity,
+		quantity,
+		type,
+		buyBetId,
+		soldQuantity,
+		limitOrder,
+		buyBetPricePerQuantity
+	};
+
+	return Bet.parse(payload);
+};
+
+/**
+ * This function adds a bet to the bet queue in the database.
+ *
+ * @param {TransactionSql} sql - The SQL transaction object.
+ * @param {Bet} bet - The bet object to be added to the queue.
+ *
+ * @returns {Promise<void>} Returns a promise that resolves when the bet has been added to the queue.
+ */
+const addToBetQueue = async (sql: TransactionSql, bet: Bet): Promise<void> => {
+	await sql`INSERT INTO "event".bet_queue
+            VALUES (${bet.id}, ${bet.eventId})`;
+};
+
+/**
+ * This function places a bet for a given user and event.
+ *
+ * @param {string} userId - The ID of the user placing the bet.
+ * @param {BetSchema.PlaceBetPayload} payload - The payload containing the details of the bet.
+ *
+ * @returns {Promise<Bet>} Returns a promise that resolves to a Bet object.
+ * The Bet object is the result of the placed bet.
+ *
+ * @throws {ErrorUtil.HttpException} Throws an HttpException if user tries to place simultaneous buy or sell bet.
+ * @throws {ErrorUtil.HttpException} Throws an HttpException iif buy bet is not provided for sell bet.
+ */
+const placeBet = async (userId: string, payload: BetSchema.PlaceBetPayload): Promise<Bet> => {
+	const { price: _price, quantity, eventId, type, buyBetId, optionId } = payload;
+	const { selectedOption } = await validateOption(eventId, optionId);
+
+	const limitOrder = !!_price;
+	const price = _price || selectedOption.price;
+	const totalPrice = price * quantity;
+
+	let insertBetSqlPayload: Bet;
+	let insertBetTxSqlPayload: Transaction;
+
+	return await db.sql.begin(async (sql) => {
+		if (await checkUserLockStatus(sql, userId)) throw new ErrorUtil.HttpException(429, "Only one bet order is allowed at a time.");
+		const event = await validateEvent(sql, eventId, price);
+
+		if (type === "buy") {
+			const { amount, rewardAmountUsed } = await validateBetPrice(sql, userId, event, totalPrice);
+			insertBetSqlPayload = generateInsertBetSqlPayload(userId, eventId, optionId, price, rewardAmountUsed, quantity, type, limitOrder, 0);
+			insertBetTxSqlPayload = generateTxSqlPayload(userId, "bet", -amount, -rewardAmountUsed, event.token, event.chain, null, "completed", insertBetSqlPayload.id, quantity);
+		} else {
+			if (!buyBetId) throw new ErrorUtil.HttpException(400, "Buy bet id is required for sell bet.");
+			const buyBet = await validateBuyBet(sql, userId, eventId, optionId, buyBetId);
+			const rewardAmountUsed = await validateSellBet(sql, totalPrice, quantity, buyBet);
+			insertBetSqlPayload = generateInsertBetSqlPayload(userId, eventId, optionId, price, rewardAmountUsed, quantity, type, limitOrder, null, buyBetId, buyBet.pricePerQuantity);
+		}
+
+		const bet = Bet.parse((await sql`INSERT INTO "event".bet ${sql(insertBetSqlPayload)} RETURNING *`)[0]);
+		insertBetTxSqlPayload && (await sql`INSERT INTO "wallet".transaction ${sql(insertBetTxSqlPayload)}`);
+		await addToBetQueue(sql, bet);
+		return bet;
+	});
+};
+
 //
 // const getProfitAndCommission = (quantity: number, initialPrice: number, finalPrice: number, platformFees: number) => {
 // 	const initialPriceTotal = quantity * initialPrice;
@@ -881,4 +1015,4 @@
 //
 // setInterval(initEventPayout, 5 * 1000);
 //
-// export { Bet, BetType, placeBet, cancelBet };
+export { Bet, BetType, placeBet };

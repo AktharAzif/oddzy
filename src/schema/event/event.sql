@@ -123,6 +123,7 @@ CREATE TABLE
     "profit"                     DECIMAL,
     "platform_commission"        DECIMAL,
     "sold_quantity"              INT,
+    "limit_order"                BOOLEAN          NOT NULL DEFAULT false,
     "created_at"                 TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
     "updated_at"                 TIMESTAMPTZ      NOT NULL DEFAULT NOW()
 );
@@ -138,8 +139,8 @@ CREATE TABLE
     "bet_id"         CHAR(24)    NOT NULL REFERENCES "event".bet (id),
     "matched_bet_id" CHAR(24)    NOT NULL REFERENCES "event".bet (id),
     "quantity"       INT         NOT NULL,
-    "created_at"     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    "updated_at"     TIMESTAMPTZ NOT NULL DEFAULT NOW() --Remove this
+    "liquidity_used" DECIMAL     NOT NULL DEFAULT 0,
+    "created_at"     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 
@@ -148,7 +149,7 @@ CREATE TABLE IF NOT EXISTS "event".bet_queue
     "bet_id"   CHAR(24) PRIMARY KEY REFERENCES "event".bet (id),
     "event_id" CHAR(24) REFERENCES "event".event (id),
     --created_at is duplicated from bet table to avoid join with bet table. This table is frequently queried. So, this is a performance optimization.
-    CREATED_AT TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 --FUNCTIONS
