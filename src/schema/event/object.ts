@@ -1,6 +1,6 @@
-import { WalletSchema } from "..";
+import { BetSchema, WalletSchema } from "..";
 import { builder, db } from "../../config";
-import { EventService } from "../../service";
+import { BetService, EventService } from "../../service";
 
 const EventStatusEnum = builder.enumType("EventStatusEnum", {
 	values: EventService.EventStatus.options,
@@ -179,6 +179,28 @@ Event.implement({
 			type: WalletSchema.ChainEnum,
 			resolve: (parent) => parent.chain,
 			description: "The chain in which the token is used"
+		}),
+		bets: t.field({
+			type: BetSchema.BetPaginatedResponse,
+			args: {
+				page: t.arg.int({
+					required: true,
+					description: "The page number. Min 1.",
+					validate: { min: 1 },
+					defaultValue: 1
+				}),
+				limit: t.arg.int({
+					required: true,
+					description: "The number of bets per page. Min 1, Max 100.",
+					validate: { min: 1, max: 100 },
+					defaultValue: 20
+				})
+			},
+			authScopes: (_, __, { user }) => (user && user.access) || { admin: true },
+			resolve: async (parent, { page, limit }, { user, admin }) => {
+				const userId = user && user.id;
+				return await BetService.getBets(parent.id, userId, page - 1, limit);
+			}
 		}),
 		status: t.field({
 			type: EventStatusEnum,
