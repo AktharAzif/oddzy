@@ -65,8 +65,8 @@ CREATE TABLE
 CREATE TABLE
     IF NOT EXISTS "event".option_odds_history
 (
-    "id"         CHAR(24) PRIMARY KEY,
-    "option_id"  CHAR(24)    NOT NULL REFERENCES "event".option (id) ON DELETE CASCADE,
+    "id"         SERIAL PRIMARY KEY,
+    "option_id"  INTEGER     NOT NULL REFERENCES "event".option (id) ON DELETE CASCADE,
     "quantity"   INT         NOT NULL,
     "odds"       FLOAT       NOT NULL,
     "price"      DECIMAL     NOT NULL,

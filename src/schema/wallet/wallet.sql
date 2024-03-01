@@ -24,7 +24,7 @@ CREATE TABLE
     "tx_hash"       VARCHAR(255),
     "token"         "wallet".token              NOT NULL,
     "chain"         "wallet".chain              NOT NULL,
-    "bet_id"        CHAR(24), --Added reference in 03_event.sql
+    "bet_id"        CHAR(24), --Added reference in event.sql
     "bet_quantity"  INTEGER,
     "created_at"    TIMESTAMPTZ                 NOT NULL DEFAULT NOW(),
     "updated_at"    TIMESTAMPTZ                 NOT NULL DEFAULT NOW()
