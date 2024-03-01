@@ -29,6 +29,8 @@ CREATE TABLE
     "token"                    "wallet".token       NOT NULL,
     "chain"                    "wallet".chain       NOT NULL,
     "slippage"                 DECIMAL              NOT NULL,
+    "resolved"                 BOOLEAN              NOT NULL DEFAULT false,
+    "resolved_at"              TIMESTAMPTZ,
     "created_at"               TIMESTAMPTZ          NOT NULL DEFAULT NOW(),
     "updated_at"               TIMESTAMPTZ          NOT NULL DEFAULT NOW()
 );
@@ -116,8 +118,6 @@ CREATE TABLE
     "matched_quantity"           INT              NOT NULL,
     "type"                       "event".bet_type NOT NULL,
     "buy_bet_id"                 CHAR(24) REFERENCES "event".bet (id),
-    "resolved"                   BOOLEAN          NOT NULL DEFAULT false,
-    "resolved_at"                TIMESTAMPTZ,
     "buy_bet_price_per_quantity" DECIMAL, --Adding this column to avoid join for calculating profit.
     "reward_amount_used"         DECIMAL          NOT NULL,
     "profit"                     DECIMAL,
