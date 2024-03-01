@@ -4,6 +4,7 @@ import * as jose from "jose";
 import { TwitterApi } from "twitter-api-v2";
 import { z } from "zod";
 import { db } from "../config";
+import { UserSchema } from "../schema";
 import { ErrorUtil } from "../util";
 
 const { TWITTER_CLIENT_ID, TWITTER_CLIENT_SECRET, TWITTER_CALLBACK_URL, DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_CALLBACK_URL, USER_JWT_SECRET } = Bun.env;
@@ -550,6 +551,23 @@ const updateUser = async (userId: string, about: string, instagram: string): Pro
 	return User.parse(user);
 };
 
+const getAllUsers = async (page: number, limit: number): Promise<UserSchema.UserPaginatedResponse> => {
+	const users = db.sql`SELECT *
+                       FROM "user".user
+                       LIMIT ${limit} OFFSET ${page * limit}`;
+	const total = db.sql`SELECT COUNT(*)
+                       FROM "user".user` as Promise<[{ count: string }]>;
+
+	const [usersRes, [totalRes]] = await Promise.all([users, total]);
+
+	return {
+		users: z.array(User).parse(usersRes),
+		total: Number(totalRes.count),
+		page: page + 1,
+		limit
+	};
+};
+
 export {
 	SocialPlatform,
 	Social,
@@ -565,5 +583,6 @@ export {
 	getUser,
 	updateUser,
 	getAccess,
-	getReferralCodes
+	getReferralCodes,
+	getAllUsers
 };

@@ -151,4 +151,33 @@ ReferralCode.implement({
 	}),
 	description: "The referral code response object."
 });
-export { UserLoginResponse, User, Social, ReferralCode };
+
+const UserPaginatedResponse = builder.objectRef<{
+	users: UserService.User[];
+	total: number;
+	page: number;
+	limit: number;
+}>("UserPaginatedResponse");
+
+UserPaginatedResponse.implement({
+	fields: (t) => ({
+		users: t.field({
+			type: [User],
+			resolve: (parent) => parent.users,
+			description: "The users"
+		}),
+		total: t.exposeInt("total", {
+			description: "The total number of users"
+		}),
+		page: t.exposeInt("page", {
+			description: "Current page number"
+		}),
+		limit: t.exposeInt("limit", {
+			description: "The number of users per page"
+		})
+	}),
+	description: "The paginated user response object."
+});
+type UserPaginatedResponse = typeof UserPaginatedResponse.$inferType;
+
+export { UserLoginResponse, User, Social, ReferralCode, UserPaginatedResponse };

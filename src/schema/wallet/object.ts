@@ -174,7 +174,7 @@ TransactionPaginatedResponse.implement({
 			description: "Current page number."
 		}),
 		limit: t.exposeInt("limit", {
-			description: "The limit of transactions per page."
+			description: "The number of transactions per page."
 		})
 	}),
 	description: "The paginated response object for the transactions."

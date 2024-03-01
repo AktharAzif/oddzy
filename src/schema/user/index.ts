@@ -1,7 +1,7 @@
 import { builder } from "../../config";
 import { UserService } from "../../service";
 import { ErrorUtil } from "../../util";
-import { ReferralCode, Social, User, UserLoginResponse } from "./object.ts";
+import { ReferralCode, Social, User, UserLoginResponse, UserPaginatedResponse } from "./object.ts";
 
 builder.queryField("twitterAuthUrl", (t) =>
 	t.field({
@@ -104,4 +104,27 @@ builder.queryField("referralCodes", (t) =>
 	})
 );
 
-export { User };
+builder.queryField("users", (t) =>
+	t.field({
+		type: UserPaginatedResponse,
+		authScopes: { admin: true },
+		args: {
+			page: t.arg.int({
+				required: true,
+				defaultValue: 1,
+				validate: { min: 1 },
+				description: "The page number. Min 1."
+			}),
+			limit: t.arg.int({
+				required: true,
+				defaultValue: 20,
+				validate: { min: 1, max: 100 },
+				description: "The limit of categories per page. Min 1, Max 100."
+			})
+		},
+		resolve: async (_, { page, limit }) => await UserService.getAllUsers(page - 1, limit),
+		description: "Get a list of all users. Can only be accessed by the admin."
+	})
+);
+
+export { User, UserPaginatedResponse };

@@ -81,7 +81,7 @@ CategoryPaginatedResponse.implement({
 			description: "Current page number"
 		}),
 		limit: t.exposeInt("limit", {
-			description: "The limit of categories per page"
+			description: "The number of categories per page"
 		})
 	}),
 	description: "The paginated category response object."
@@ -309,7 +309,7 @@ EventPaginatedResponse.implement({
 			description: "Current page number"
 		}),
 		limit: t.exposeInt("limit", {
-			description: "The limit of events per page"
+			description: "The number of events per page"
 		})
 	}),
 	description: "The paginated event response object."
