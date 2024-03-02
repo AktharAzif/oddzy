@@ -114,8 +114,7 @@ CREATE TABLE
     "option_id"                  INTEGER          NOT NULL REFERENCES "event".option (id),
     "quantity"                   INT              NOT NULL,
     "price_per_quantity"         DECIMAL          NOT NULL,
-    "unmatched_reward_amount"    DECIMAL          NOT NULL,
-    "matched_quantity"           INT              NOT NULL,
+    "unmatched_quantity"         INT              NOT NULL,
     "type"                       "event".bet_type NOT NULL,
     "buy_bet_id"                 CHAR(24) REFERENCES "event".bet (id),
     "buy_bet_price_per_quantity" DECIMAL, --Adding this column to avoid join for calculating profit.

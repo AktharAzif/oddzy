@@ -200,7 +200,8 @@ Event.implement({
 			resolve: async (parent, { page, limit }, { user, admin }) => {
 				const userId = user && user.id;
 				return await BetService.getBets(parent.id, userId, page - 1, limit);
-			}
+			},
+			description: "Get all the bets for the logged in user or for all users if the user is admin"
 		}),
 		status: t.field({
 			type: EventStatusEnum,

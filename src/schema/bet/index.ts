@@ -28,7 +28,7 @@ builder.mutationField("placeBet", (t) =>
 	})
 );
 
-builder.mutationField("bets", (t) =>
+builder.queryField("bets", (t) =>
 	t.field({
 		authScopes: (_, __, { user }) => (user && user.access) || { admin: true },
 		type: BetPaginatedResponse,
