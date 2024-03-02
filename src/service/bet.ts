@@ -949,7 +949,6 @@ setInterval(runMatchQueue, 5 * 1000);
  * - For buy bets, the difference between the win price and the price per quantity is less than or equal to the platform's remaining liquidity.
  * - If the event does not allow liquidity in between, the price per quantity is either less than or equal to the minimum liquidity percentage of the win price, or greater than or equal to the maximum liquidity percentage of the win price.
  * - If the event allows liquidity in between, the price per quantity is between the minimum and maximum liquidity percentages of the win price.
- * - The bet is not in the top 5 bets for the event.
  *
  * The returned bets are sorted by total price in descending order and creation date in ascending order.
  *
@@ -975,8 +974,7 @@ const getLiquidityMatchableBets = async (): Promise<Array<Bet>> =>
                  bet.price_per_quantity >= event.win_price * event.max_liquidity_percentage / 100))
             OR (event.liquidity_in_between = true AND
                 bet.price_per_quantity BETWEEN event.win_price * event.min_liquidity_percentage / 100 AND event.win_price * event.max_liquidity_percentage / 100))
-        ORDER BY bet.price_per_quantity * bet.quantity DESC, bet.created_at
-        OFFSET 5`
+        ORDER BY bet.price_per_quantity * bet.quantity DESC, bet.created_at`
 	);
 
 /**
