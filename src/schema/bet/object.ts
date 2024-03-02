@@ -1,5 +1,6 @@
-import { builder } from "../../config";
-import { BetService } from "../../service";
+import { EventSchema } from "..";
+import { builder, db } from "../../config";
+import { BetService, EventService } from "../../service";
 
 const BetTypeEnum = builder.enumType("BetTypeEnum", {
 	values: BetService.BetType.options,
@@ -24,8 +25,18 @@ const Bet = builder.objectRef<BetService.Bet>("Bet").implement({
 		eventId: t.exposeString("eventId", {
 			description: "The unique identifier of the event the bet is placed on"
 		}),
+		event: t.field({
+			type: EventSchema.Event,
+			resolve: async (parent, _) => await EventService.getEvent(db.sql, parent.eventId),
+			description: "The event the bet is placed on"
+		}),
 		optionId: t.exposeInt("optionId", {
 			description: "The unique identifier of the option the bet is placed on"
+		}),
+		option: t.field({
+			type: EventSchema.Option,
+			resolve: async (parent, _) => await EventService.getOption(parent.optionId),
+			description: "The option the bet is placed on"
 		}),
 		userId: t.exposeString("userId", {
 			nullable: true,

@@ -71,6 +71,10 @@ const CreateEventPayload = z
 	.refine(({ minLiquidityPercentage, maxLiquidityPercentage }) => minLiquidityPercentage <= maxLiquidityPercentage, {
 		message: "minLiquidityPercentage must be less than or equal to minLiquidityPercentage",
 		path: ["minLiquidityPercentage", "maxLiquidityPercentage"]
+	})
+	.refine(({ freezeAt, endAt }) => !freezeAt || freezeAt < endAt, {
+		message: "Freeze date must be less than end date",
+		path: ["freezeAt", "endAt"]
 	});
 
 type CreateEventPayload = z.infer<typeof CreateEventPayload>;
@@ -104,6 +108,10 @@ const UpdateEventPayload = z
 	.refine(({ minLiquidityPercentage, maxLiquidityPercentage }) => minLiquidityPercentage <= maxLiquidityPercentage, {
 		message: "minLiquidityPercentage must be less than or equal to minLiquidityPercentage",
 		path: ["minLiquidityPercentage", "maxLiquidityPercentage"]
+	})
+	.refine(({ freezeAt, endAt }) => !freezeAt || freezeAt < endAt, {
+		message: "Freeze date must be less than end date",
+		path: ["freezeAt", "endAt"]
 	});
 
 type UpdateEventPayload = z.infer<typeof UpdateEventPayload>;

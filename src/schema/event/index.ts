@@ -415,3 +415,5 @@ export type {
 	EventPaginatedResponse,
 	UpdateEventPayload
 };
+
+export { Option, Event };

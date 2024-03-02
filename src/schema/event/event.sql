@@ -110,7 +110,7 @@ CREATE TABLE
 (
     "id"                         CHAR(24) PRIMARY KEY,
     "event_id"                   CHAR(24)         NOT NULL REFERENCES "event".event (id),
-    "user_id"                    CHAR(24)         NOT NULL REFERENCES "user".user (id),
+    "user_id"                    CHAR(24) REFERENCES "user".user (id),
     "option_id"                  INTEGER          NOT NULL REFERENCES "event".option (id),
     "quantity"                   INT              NOT NULL,
     "price_per_quantity"         DECIMAL          NOT NULL,
@@ -138,7 +138,6 @@ CREATE TABLE
     "bet_id"         CHAR(24)    NOT NULL REFERENCES "event".bet (id),
     "matched_bet_id" CHAR(24)    NOT NULL REFERENCES "event".bet (id),
     "quantity"       INT         NOT NULL,
-    "liquidity_used" DECIMAL     NOT NULL DEFAULT 0,
     "created_at"     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

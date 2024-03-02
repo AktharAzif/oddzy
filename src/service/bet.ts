@@ -427,472 +427,721 @@ const getProfitAndCommission = (
 	return { amount, profit, platformCommission };
 };
 
-//
-// const getSellPayoutTxSqlPayload = (event: Event, sellBet: Bet) => {
-// 	//sellBet will always have butBetPricePerQuantity as number because it's a sell bet. So, casting it as number
-// 	const { amount: _amount, profit, platformCommission } = getProfitAndCommission(sellBet.quantity, sellBet.buyBetPricePerQuantity as number, sellBet.pricePerQuantity, event.platformFeesPercentage);
-// 	const amount = _amount - sellBet.rewardAmountUsed;
-//
-// 	const payoutTxSqlPayload = generateTxSqlPayload(sellBet.userId as string, "bet", amount, sellBet.rewardAmountUsed, event.token, event.chain, null, "completed", sellBet.id, sellBet.quantity);
-//
-// 	return { payoutTxSqlPayload, profit, platformCommission };
-// };
-//
-// const getCancelBetSqlPayload = (bet: Bet, event: Event, quantity: number) => {
-// 	const totalCancelAmount = bet.pricePerQuantity * quantity;
-// 	const totalAmount = bet.pricePerQuantity * bet.quantity - bet.rewardAmountUsed;
-//
-// 	//Since reward amount have priority during placing the bet, we will be refunding the main balance first
-// 	const rewardAmount = totalCancelAmount > totalAmount ? totalCancelAmount - totalAmount : 0;
-// 	const amount = totalCancelAmount - rewardAmount;
-//
-// 	const updateBetSqlPayload = {
-// 		id: bet.id,
-// 		unmatchedQuantity: bet.unmatchedQuantity - quantity,
-// 		rewardAmountUsed: bet.rewardAmountUsed - rewardAmount,
-// 		quantity: bet.quantity - quantity,
-// 		profit: null,
-// 		platformCommission: null,
-// 		updatedAt: new Date()
-// 	};
-//
-// 	let updateBuyBetSqlPayload: {
-// 		id: string;
-// 		soldQuantityReturn: number;
-// 		rewardAmountReturn: number;
-// 		updatedAt: Date;
-// 	} | null = null;
-//
-// 	let txSqlPayload: Transaction | null = null;
-//
-// 	if (bet.type === "buy" && bet.userId) {
-// 		txSqlPayload = generateTxSqlPayload(bet.userId, "bet_cancel", amount, rewardAmount, event.token, event.chain, null, "completed", bet.id, quantity);
-// 	} else {
-// 		updateBuyBetSqlPayload = {
-// 			id: bet.buyBetId as string,
-// 			soldQuantityReturn: quantity,
-// 			rewardAmountReturn: rewardAmount,
-// 			updatedAt: new Date()
-// 		};
-//
-// 		const unmatchedQuantity = bet.unmatchedQuantity - quantity;
-// 		if (bet.userId && unmatchedQuantity === 0) {
-// 			if (updateBetSqlPayload.quantity) {
-// 				const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, {
-// 					...bet,
-// 					quantity: updateBetSqlPayload.quantity
-// 				});
-//
-// 				txSqlPayload = payoutTxSqlPayload;
-//
-// 				return {
-// 					updateBetSqlPayload: {
-// 						...updateBetSqlPayload,
-// 						profit,
-// 						platformCommission
-// 					},
-// 					txSqlPayload,
-// 					updateBuyBetSqlPayload
-// 				};
-// 			} else {
-// 				return {
-// 					updateBetSqlPayload: {
-// 						...updateBetSqlPayload,
-// 						profit: 0,
-// 						platformCommission: 0
-// 					},
-// 					txSqlPayload,
-// 					updateBuyBetSqlPayload
-// 				};
-// 			}
-// 		}
-// 	}
-//
-// 	return {
-// 		updateBetSqlPayload,
-// 		txSqlPayload,
-// 		updateBuyBetSqlPayload
-// 	};
-// };
-//
-// const cancelBet = async (userId: string, payload: EventSchema.CancelBetPayload): Promise<Bet> => {
-// 	const { id, quantity, eventId } = payload;
-//
-// 	return await db.sql.begin(async (sql) => {
-// 		if (await checkUserLockStatus(sql, userId)) throw new ErrorUtil.HttpException(429, "Only one bet order is allowed at a time.");
-// 		await sql`SELECT pg_advisory_xact_lock(hashtext(${eventId}))`;
-// 		const event = await validateEvent(sql, eventId);
-// 		const bet = await getBet(sql, id);
-//
-// 		if (quantity > bet.unmatchedQuantity) throw new ErrorUtil.HttpException(400, "Quantity is higher than unmatched quantity.");
-//
-// 		const { updateBetSqlPayload: _updateBetSqlPayload, txSqlPayload, updateBuyBetSqlPayload } = getCancelBetSqlPayload(bet, event, quantity);
-//
-// 		const { id: _, ...updateBetSqlPayload } = _updateBetSqlPayload;
-//
-// 		updateBuyBetSqlPayload &&
-// 			(await sql`UPDATE "event".bet
-//                SET sold_quantity      = sold_quantity - ${updateBuyBetSqlPayload.soldQuantityReturn},
-//                    reward_amount_used = reward_amount_used + ${updateBuyBetSqlPayload.rewardAmountReturn},
-//                    updated_at         = ${updateBuyBetSqlPayload.updatedAt}
-//                WHERE id = ${updateBuyBetSqlPayload.id}`);
-//
-// 		txSqlPayload && (await sql`INSERT INTO "wallet".transaction ${sql(txSqlPayload)}`);
-//
-// 		return Bet.parse(
-// 			(
-// 				await sql`UPDATE "event".bet
-//                   SET ${sql(updateBetSqlPayload)}
-//                   WHERE id = ${bet.id}
-//                   RETURNING *`
-// 			)[0]
-// 		);
-// 	});
-// };
-//
-// const getUnmatchedOrders = async (sql: TransactionSql, event: Event, type: BetType, price: number, quantity: number, selectedOption: number, otherOption: number) =>
-// 	z.array(Bet).parse(
-// 		await sql`
-//         WITH unmatched_orders AS (SELECT *,
-//                                          quantity * price_per_quantity                                  AS total_price,
-//                                          SUM(unmatched_quantity)
-//                                          OVER (ORDER BY quantity * price_per_quantity DESC, created_at) AS cum_sum
-//                                   FROM "event".bet
-//                                   WHERE event_id = ${event.id}
-//                                     AND unmatched_quantity > 0
-//                                     AND ${
-// 																			type === "buy"
-// 																				? sql`(( "type" = 'buy' AND option_id = ${otherOption} AND price_per_quantity BETWEEN ${event.winPrice - price - event.slippage} AND ${event.winPrice - price + event.slippage}) OR (type = 'sell' AND option_id = ${selectedOption} AND price_per_quantity BETWEEN ${price - event.slippage} AND ${price + event.slippage}))`
-// 																				: sql`type
-//                                                 = 'buy' AND option_id =
-//                                                 ${selectedOption}
-//                                                 AND
-//                                                 price_per_quantity
-//                                                 BETWEEN
-//                                                 ${price - event.slippage}
-//                                                 AND
-//                                                 ${price + event.slippage}`
-// 																		})
-//         SELECT *
-//         FROM unmatched_orders
-//         WHERE cum_sum <= ${quantity}
-//         UNION
-//         (SELECT *
-//          FROM unmatched_orders
-//          WHERE cum_sum >= ${quantity}
-//          LIMIT 1)
-//         ORDER BY total_price DESC, created_at;
-// 		`
-// 	);
-//
-// const getUnmatchedOrdersForAdmin = async (sql: TransactionSql, event: Event, price: number, quantity: number, selectedOption: number) =>
-// 	z.array(Bet).parse(
-// 		await sql`
-//         WITH unmatched_orders AS (SELECT *,
-//                                          quantity * price_per_quantity                                  AS total_price,
-//                                          SUM(unmatched_quantity)
-//                                          OVER (ORDER BY quantity * price_per_quantity DESC, created_at) AS cum_sum
-//                                   FROM "event".bet
-//                                   WHERE event_id = ${event.id}
-//                                     AND unmatched_quantity > 0
-//                                     AND user_id IS NOT NULL
-//                                     AND type
-//                                       = 'buy'
-//                                     AND option_id =
-//                                         ${selectedOption}
-//                                     AND price_per_quantity
-//                                       BETWEEN
-//                                       ${price - event.slippage}
-//                                       AND
-//                                       ${price + event.slippage})
-//         SELECT *
-//         FROM unmatched_orders
-//         WHERE cum_sum <= ${quantity}
-//         UNION
-//         (SELECT *
-//          FROM unmatched_orders
-//          WHERE cum_sum >= ${quantity}
-//          LIMIT 1)
-//         ORDER BY total_price DESC, created_at;
-// 		`
-// 	);
-//
-// const removeBetFromQueue = async (sql: TransactionSql, betId: string) =>
-// 	sql`DELETE
-//       FROM "event".bet_queue
-//       WHERE bet_id = ${betId}`;
-//
-// const matchOrder = async (betId: string, eventId: string) => {
-// 	const insertMatchedBetSqlPayload: {
-// 		betId: string;
-// 		matchedBetId: string;
-// 		quantity: number;
-// 		createdAt: Date;
-// 	}[] = [];
-//
-// 	const insertSellPayoutTxSqlPayload: Transaction[] = [];
-//
-// 	const updateBetSqlPayload: {
-// 		id: string;
-// 		unmatchedQuantity: number;
-// 		profit: number | null;
-// 		platformCommission: number | null;
-// 		updatedAt: Date;
-// 	}[] = [];
-//
-// 	const addUpdateBetSqlPayload = (betId: string, unmatchedQuantity: number, profit: number | null = null, platformCommission: number | null = null) =>
-// 		updateBetSqlPayload.push({
-// 			id: betId,
-// 			unmatchedQuantity,
-// 			profit,
-// 			platformCommission,
-// 			updatedAt: new Date()
-// 		});
-//
-// 	await db.sql.begin(async (sql) => {
-// 		await sql`SELECT pg_advisory_xact_lock(hashtext(${eventId}))`;
-// 		const bet = await getBet(sql, betId);
-// 		const { optionId, unmatchedQuantity, type, pricePerQuantity } = bet;
-// 		const event = await getEvent(sql, eventId);
-// 		//Matching still works event if is frozen. But it will stop matching when event status is changed completed
-// 		if (event.status === "completed") {
-// 			await removeBetFromQueue(sql, betId);
-// 			return;
-// 		}
-// 		const { selectedOption, otherOption } = await validateOption(eventId, optionId);
-//
-// 		const unmatchedOrders = bet.userId
-// 			? await getUnmatchedOrders(sql, event, type, pricePerQuantity, unmatchedQuantity, selectedOption.id, otherOption.id)
-// 			: await getUnmatchedOrdersForAdmin(sql, event, pricePerQuantity, unmatchedQuantity, selectedOption.id);
-// 		let remainingQuantity = unmatchedQuantity;
-//
-// 		for (const order of unmatchedOrders) {
-// 			if (remainingQuantity === 0) break;
-//
-// 			const matchedQuantity = remainingQuantity < order.unmatchedQuantity ? remainingQuantity : order.unmatchedQuantity;
-// 			remainingQuantity -= matchedQuantity;
-//
-// 			insertMatchedBetSqlPayload.push({
-// 				betId: betId,
-// 				matchedBetId: order.id,
-// 				quantity: matchedQuantity,
-// 				createdAt: new Date()
-// 			});
-//
-// 			const unmatchedQuantity = order.unmatchedQuantity - matchedQuantity;
-//
-// 			if (order.type === "sell" && unmatchedQuantity === 0 && order.userId) {
-// 				const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, order);
-//
-// 				addUpdateBetSqlPayload(order.id, unmatchedQuantity, profit, platformCommission);
-// 				insertSellPayoutTxSqlPayload.push(payoutTxSqlPayload);
-// 			} else {
-// 				addUpdateBetSqlPayload(order.id, unmatchedQuantity);
-// 			}
-// 		}
-//
-// 		if (remainingQuantity === 0 && bet.type === "sell" && bet.userId) {
-// 			const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, bet);
-//
-// 			addUpdateBetSqlPayload(bet.id, remainingQuantity, profit, platformCommission);
-// 			insertSellPayoutTxSqlPayload.push(payoutTxSqlPayload);
-// 		} else if (unmatchedQuantity !== remainingQuantity) {
-// 			addUpdateBetSqlPayload(bet.id, remainingQuantity);
-// 		}
-//
-// 		if (updateBetSqlPayload.length) {
-// 			const payload = updateBetSqlPayload.map(({ id, unmatchedQuantity, profit, platformCommission, updatedAt }) => [id, unmatchedQuantity, profit, platformCommission, updatedAt]);
-//
-// 			//noinspection SqlResolve
-// 			updateBetSqlPayload.length &&
-// 				(await sql`
-//           UPDATE "event".bet
-//           SET unmatched_quantity  = (update_data.unmatched_quantity)::int,
-//               profit              = (update_data.profit)::decimal,
-//               platform_commission = (update_data.platform_commission)::decimal,
-//               updated_at          = update_data.updated_at
-//           FROM (VALUES ${
-// 						//@ts-ignore
-// 						sql(payload)
-// 					}) AS update_data (id, unmatched_quantity, profit, platform_commission, updated_at)
-//           WHERE "event".bet.id = update_data.id
-// 			`);
-// 		}
-//
-// 		insertMatchedBetSqlPayload.length && (await sql`INSERT INTO "event".matched ${sql(insertMatchedBetSqlPayload)}`);
-// 		insertSellPayoutTxSqlPayload.length && (await sql`INSERT INTO "wallet".transaction ${sql(insertSellPayoutTxSqlPayload)}`);
-//
-// 		await removeBetFromQueue(sql, betId);
-// 	});
-// };
-//
-// let runMatchQueueRunning = false;
-// const runMatchQueue = async () => {
-// 	try {
-// 		if (runMatchQueueRunning) return;
-// 		runMatchQueueRunning = true;
-//
-// 		const bets = (await db.sql`
-//         SELECT *
-//         FROM "event".bet_queue
-//         ORDER BY created_at
-// 		`) as [
-// 			{
-// 				betId: string;
-// 				eventId: string;
-// 			}
-// 		];
-//
-// 		//@ts-ignore Not implemented in the stable typescript version yet
-// 		const betsByEvents = Object.groupBy(bets, ({ eventId }) => eventId) as {
-// 			[eventId: string]: {
-// 				betId: string;
-// 				eventId: string;
-// 			}[];
-// 		};
-//
-// 		await Promise.all(
-// 			Object.keys(betsByEvents).map(async (event) => {
-// 				for (const bet of betsByEvents[event]) {
-// 					await matchOrder(bet.betId, bet.eventId);
-// 				}
-// 			})
-// 		);
-//
-// 		runMatchQueueRunning = false;
-// 	} catch (error) {
-// 		console.error("Error running match queue", error);
-// 		runMatchQueueRunning = false;
-// 	}
-// };
-//
-// setInterval(runMatchQueue, 5 * 1000);
-//
-// //Not using NOT IN BETWEEN because it's not inclusive
-// const getLiquidityMatchableBets = async () =>
-// 	z.array(Bet).parse(
-// 		await db.sql`
-//         SELECT bet.*
-//         FROM "event".bet
-//                  JOIN "event".event ON bet.event_id = event.id
-//         WHERE event.status = 'live'
-//           AND event.frozen = false
-//           AND bet.user_id IS NOT NULL
-//           AND bet.unmatched_quantity > 0
-//           AND bet.updated_at < NOW() - INTERVAL '20 seconds'
-//           AND ((bet.type = 'sell' AND bet.price_per_quantity <= event.platform_liquidity_left) OR
-//                (bet.type = 'buy' AND event.win_price - bet.price_per_quantity <= event.platform_liquidity_left))
-//           AND ((event.liquidity_in_between = false AND
-//                 (bet.price_per_quantity <= event.win_price * event.min_liquidity_percentage / 100 OR
-//                  bet.price_per_quantity >= event.win_price * event.max_liquidity_percentage / 100))
-//             OR (event.liquidity_in_between = true AND
-//                 bet.price_per_quantity BETWEEN event.win_price * event.min_liquidity_percentage / 100 AND event.win_price * event.max_liquidity_percentage / 100))
-//         ORDER BY bet.price_per_quantity * bet.quantity DESC, bet.created_at`
-// 	);
-//
-// const placeCounterLiquidityBet = async (sql: TransactionSql, bet: Bet, event: Event, selectedOption: number, otherOption: number, quantity: number) => {
-// 	let counterBuyBet: Bet;
-// 	const unmatchedQuantity = bet.unmatchedQuantity - quantity;
-//
-// 	if (bet.type === "sell") {
-// 		counterBuyBet = generateInsertBetSqlPayload(null, bet.eventId, selectedOption, bet.pricePerQuantity, 0, quantity, "buy", quantity, null, null, 0);
-//
-// 		if (unmatchedQuantity === 0) {
-// 			const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, bet);
-//
-// 			await sql`INSERT INTO "wallet".transaction ${sql(payoutTxSqlPayload)}`;
-//
-// 			bet = {
-// 				...bet,
-// 				profit,
-// 				platformCommission,
-// 				unmatchedQuantity
-// 			};
-// 		}
-// 	} else {
-// 		counterBuyBet = generateInsertBetSqlPayload(null, bet.eventId, otherOption, event.winPrice - bet.pricePerQuantity, 0, quantity, "buy", quantity, null, null, 0);
-// 	}
-//
-// 	const insertMatchedBetSqlPayload = {
-// 		betId: counterBuyBet.id,
-// 		matchedBetId: bet.id,
-// 		quantity,
-// 		createdAt: new Date()
-// 	};
-//
-// 	const updateBetSqlPayload = {
-// 		profit: bet.profit,
-// 		platformCommission: bet.platformCommission,
-// 		unmatchedQuantity,
-// 		updated_at: new Date()
-// 	};
-// 	await sql`INSERT INTO "event".bet ${sql(counterBuyBet)}`;
-// 	await sql`UPDATE "event".bet
-//             SET ${sql(updateBetSqlPayload)}
-//             WHERE id = ${bet.id}`;
-//
-// 	await sql`INSERT INTO "event".matched ${sql(insertMatchedBetSqlPayload)}`;
-// 	await sql`UPDATE "event".event
-//             SET platform_liquidity_left = platform_liquidity_left - ${counterBuyBet.pricePerQuantity * quantity},
-//                 updated_at              = ${new Date()}
-//             WHERE id = ${event.id}`;
-//
-// 	const counterSellBet = generateInsertBetSqlPayload(
-// 		null,
-// 		bet.eventId,
-// 		counterBuyBet.optionId,
-// 		counterBuyBet.pricePerQuantity,
-// 		0,
-// 		quantity,
-// 		"sell",
-// 		null,
-// 		counterBuyBet.id,
-// 		counterBuyBet.buyBetPricePerQuantity
-// 	);
-//
-// 	const res = Bet.parse((await sql`INSERT INTO "event".bet ${sql(counterSellBet)} RETURNING *`)[0]);
-// 	await addToBetQueue(sql, res);
-// };
-//
-// const matchWithLiquidityEngine = async (bet: Bet) => {
-// 	const { selectedOption, otherOption } = await validateOption(bet.eventId, bet.optionId);
-//
-// 	await db.sql.begin(async (sql) => {
-// 		await sql`SELECT pg_advisory_xact_lock(hashtext(${bet.eventId}))`;
-// 		const event = await getEvent(sql, bet.eventId);
-// 		//Matching still works event if is frozen. But it will stop matching when event status is changed completed
-// 		if (event.status === "completed") return;
-//
-// 		//Fetch bet again to check whether any other bet has already matched with it
-// 		bet = await getBet(sql, bet.id);
-//
-// 		const pricePerQuantity = bet.type === "sell" ? bet.pricePerQuantity : event.winPrice - bet.pricePerQuantity;
-// 		if (pricePerQuantity > event.platformLiquidityLeft) return;
-// 		const liquidityMatchableQuantity = Math.floor(event.platformLiquidityLeft / pricePerQuantity);
-//
-// 		await placeCounterLiquidityBet(sql, bet, event, selectedOption.id, otherOption.id, liquidityMatchableQuantity > bet.unmatchedQuantity ? bet.unmatchedQuantity : liquidityMatchableQuantity);
-// 	});
-// };
-//
-// let liquidityEngineRunning = false;
-// const liquidityEngine = async () => {
-// 	try {
-// 		if (liquidityEngineRunning) return;
-// 		liquidityEngineRunning = true;
-// 		const bets = await getLiquidityMatchableBets();
-//
-// 		for (const bet of bets) {
-// 			await matchWithLiquidityEngine(bet);
-// 		}
-//
-// 		liquidityEngineRunning = false;
-// 	} catch (e) {
-// 		console.error("Error running liquidityEngine", e);
-// 		liquidityEngineRunning = false;
-// 	}
-// };
-//
-// setInterval(liquidityEngine, 20 * 1000);
+/**
+ * Generates the payout transaction payload for a sell bet.
+ *
+ * @param {Event} event - The event object related to the sell bet.
+ * @param {Bet} sellBet - The sell bet object for which the payout is being calculated.
+ *
+ * @returns {Object} An object containing the payout transaction payload, the profit and the platform commission.
+ * The payout transaction payload is an object containing the details of the payout transaction.
+ * The profit is the earned amount minus the commission, or the earned amount if it's less than zero.
+ * The platform commission is zero if the profit equals the earned amount, otherwise it's the calculated commission.
+ */
+const getSellPayoutTxSqlPayload = (
+	event: Event,
+	sellBet: Bet
+): {
+	payoutTxSqlPayload: Transaction;
+	profit: number;
+	platformCommission: number;
+} => {
+	//sellBet will always have butBetPricePerQuantity as number because it's a sell bet. So, casting it as number
+	const { amount: _amount, profit, platformCommission } = getProfitAndCommission(sellBet.quantity, sellBet.buyBetPricePerQuantity as number, sellBet.pricePerQuantity, event.platformFeesPercentage);
+	const amount = _amount - sellBet.rewardAmountUsed;
+
+	const payoutTxSqlPayload = generateTxSqlPayload(sellBet.userId as string, "bet", amount, sellBet.rewardAmountUsed, event.token, event.chain, null, "completed", sellBet.id, sellBet.quantity);
+
+	return { payoutTxSqlPayload, profit, platformCommission };
+};
+
+/**
+ * Generates the SQL payload for cancelling a bet.
+ *
+ * @param {Bet} bet - The bet object to be cancelled.
+ * @param {Event} event - The event object related to the bet.
+ * @param {number} quantity - The quantity of the bet to be cancelled.
+ *
+ * @returns {Object} An object containing the SQL payloads for updating the bet, the transaction, and the buy bet.
+ * The updateBetSqlPayload is an object containing the details for updating the bet in the database.
+ * The txSqlPayload is an object containing the details for updating the transaction in the database.
+ * The updateBuyBetSqlPayload is an object containing the details for updating the buy bet in the database.
+ *
+ * @throws {ErrorUtil.HttpException} Throws an HttpException if the unmatched quantity is zero and the quantity is not null.
+ */
+const getCancelBetSqlPayload = (
+	bet: Bet,
+	event: Event,
+	quantity: number
+): {
+	updateBetSqlPayload: {
+		id: string;
+		unmatchedQuantity: number;
+		rewardAmountUsed: number;
+		quantity: number;
+		profit: number | null;
+		platformCommission: number | null;
+		updatedAt: Date;
+	};
+	txSqlPayload: Transaction | null;
+	updateBuyBetSqlPayload: {
+		id: string;
+		soldQuantityReturn: number;
+		rewardAmountReturn: number;
+		updatedAt: Date;
+	} | null;
+} => {
+	const totalCancelAmount = bet.pricePerQuantity * quantity;
+	const totalAmount = bet.pricePerQuantity * bet.quantity - bet.rewardAmountUsed;
+
+	//Since reward amount have priority during placing the bet, we will be refunding the main balance first
+	const rewardAmount = totalCancelAmount > totalAmount ? totalCancelAmount - totalAmount : 0;
+	const amount = totalCancelAmount - rewardAmount;
+
+	const updateBetSqlPayload = {
+		id: bet.id,
+		unmatchedQuantity: bet.unmatchedQuantity - quantity,
+		rewardAmountUsed: bet.rewardAmountUsed - rewardAmount,
+		quantity: bet.quantity - quantity,
+		profit: null,
+		platformCommission: null,
+		updatedAt: new Date()
+	};
+
+	let updateBuyBetSqlPayload: {
+		id: string;
+		soldQuantityReturn: number;
+		rewardAmountReturn: number;
+		updatedAt: Date;
+	} | null = null;
+
+	let txSqlPayload: Transaction | null = null;
+
+	if (bet.type === "buy" && bet.userId) {
+		txSqlPayload = generateTxSqlPayload(bet.userId, "bet_cancel", amount, rewardAmount, event.token, event.chain, null, "completed", bet.id, quantity);
+	} else {
+		updateBuyBetSqlPayload = {
+			id: bet.buyBetId as string,
+			soldQuantityReturn: quantity,
+			rewardAmountReturn: rewardAmount,
+			updatedAt: new Date()
+		};
+
+		const unmatchedQuantity = bet.unmatchedQuantity - quantity;
+		if (bet.userId && unmatchedQuantity === 0) {
+			if (updateBetSqlPayload.quantity) {
+				const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, {
+					...bet,
+					quantity: updateBetSqlPayload.quantity
+				});
+
+				txSqlPayload = payoutTxSqlPayload;
+
+				return {
+					updateBetSqlPayload: {
+						...updateBetSqlPayload,
+						profit,
+						platformCommission
+					},
+					txSqlPayload,
+					updateBuyBetSqlPayload
+				};
+			} else {
+				return {
+					updateBetSqlPayload: {
+						...updateBetSqlPayload,
+						profit: 0,
+						platformCommission: 0
+					},
+					txSqlPayload,
+					updateBuyBetSqlPayload
+				};
+			}
+		}
+	}
+
+	return {
+		updateBetSqlPayload,
+		txSqlPayload,
+		updateBuyBetSqlPayload
+	};
+};
+
+/**
+ * Cancels a bet for a given user and event.
+ *
+ * @param {string} userId - The ID of the user cancelling the bet.
+ * @param {string} eventId - The ID of the event related to the bet.
+ * @param {string} betId - The ID of the bet to be cancelled.
+ * @param {number} quantity - The quantity of the bet to be cancelled.
+ *
+ * @returns {Promise<Bet>} Returns a promise that resolves to a Bet object.
+ * The Bet object is the result of the cancelled bet.
+ *
+ * @throws {ErrorUtil.HttpException} Throws an HttpException if user tries to place or cancel bets simultaneously.
+ * @throws {ErrorUtil.HttpException} Throws an HttpException if the quantity to be cancelled is higher than the unmatched quantity of the bet.
+ */
+const cancelBet = async (userId: string, eventId: string, betId: string, quantity: number): Promise<Bet> => {
+	return await db.sql.begin(async (sql) => {
+		if (await checkUserLockStatus(sql, userId)) throw new ErrorUtil.HttpException(429, "Only one bet order is allowed at a time.");
+		//Locking the event to prevent concurrent modifications to the bet from matching queue
+		await sql`SELECT pg_advisory_xact_lock(hashtext(${eventId}))`;
+		const event = await validateEvent(sql, eventId);
+		const bet = await getBet(sql, betId);
+
+		if (quantity > bet.unmatchedQuantity) throw new ErrorUtil.HttpException(400, "Quantity is higher than unmatched quantity.");
+
+		const { updateBetSqlPayload: _updateBetSqlPayload, txSqlPayload, updateBuyBetSqlPayload } = getCancelBetSqlPayload(bet, event, quantity);
+
+		const { id: _, ...updateBetSqlPayload } = _updateBetSqlPayload;
+
+		updateBuyBetSqlPayload &&
+			(await sql`UPDATE "event".bet
+               SET sold_quantity      = sold_quantity - ${updateBuyBetSqlPayload.soldQuantityReturn},
+                   reward_amount_used = reward_amount_used + ${updateBuyBetSqlPayload.rewardAmountReturn},
+                   updated_at         = ${updateBuyBetSqlPayload.updatedAt}
+               WHERE id = ${updateBuyBetSqlPayload.id}`);
+
+		txSqlPayload && (await sql`INSERT INTO "wallet".transaction ${sql(txSqlPayload)}`);
+
+		return Bet.parse(
+			(
+				await sql`UPDATE "event".bet
+                  SET ${sql(updateBetSqlPayload)}
+                  WHERE id = ${bet.id}
+                  RETURNING *`
+			)[0]
+		);
+	});
+};
+
+/**
+ * Retrieves unmatched orders for a given event and bet type.
+ *
+ * @param {TransactionSql} sql - The SQL transaction object.
+ * @param {Event} event - The event object related to the bet.
+ * @param {BetType} type - The type of the bet (buy or sell).
+ * @param {number} price - The price per quantity for the bet.
+ * @param {number} quantity - The quantity of the bet.
+ * @param {number} selectedOption - The ID of the selected option for the bet.
+ * @param {number} otherOption - The ID of the other option for the bet.
+ *
+ * @returns {Promise<Array<Bet>>} Returns a promise that resolves to an array of Bet objects.
+ * The Bet objects are the unmatched orders for the given event and bet type.
+ * The orders are sorted by total price in descending order and creation date in ascending order.
+ * The function uses a SQL query with a WITH clause to create a temporary table of unmatched orders.
+ * It then selects from this table where the cumulative sum of the unmatched quantity is less than or equal to the bet quantity.
+ * It also selects the first order where the cumulative sum is greater than the bet quantity.
+ */
+const getUnmatchedOrders = async (sql: TransactionSql, event: Event, type: BetType, price: number, quantity: number, selectedOption: number, otherOption: number): Promise<Array<Bet>> =>
+	z.array(Bet).parse(
+		await sql`
+        WITH unmatched_orders AS (SELECT *,
+                                         quantity * price_per_quantity                                  AS total_price,
+                                         SUM(unmatched_quantity)
+                                         OVER (ORDER BY quantity * price_per_quantity DESC, created_at) AS cum_sum
+                                  FROM "event".bet
+                                  WHERE event_id = ${event.id}
+                                    AND unmatched_quantity > 0
+                                    AND ${
+																			type === "buy"
+																				? sql`(( "type" = 'buy' AND option_id = ${otherOption} AND price_per_quantity BETWEEN ${event.winPrice - price - event.slippage} AND ${event.winPrice - price + event.slippage}) OR (type = 'sell' AND option_id = ${selectedOption} AND price_per_quantity BETWEEN ${price - event.slippage} AND ${price + event.slippage}))`
+																				: sql`type
+                                               = 'buy' AND option_id =
+                                               ${selectedOption}
+                                               AND
+                                               price_per_quantity
+                                               BETWEEN
+                                               ${price - event.slippage}
+                                               AND
+                                               ${price + event.slippage}`
+																		})
+        SELECT *
+        FROM unmatched_orders
+        WHERE cum_sum <= ${quantity}
+        UNION
+        (SELECT *
+         FROM unmatched_orders
+         WHERE cum_sum >= ${quantity}
+         LIMIT 1)
+        ORDER BY total_price DESC, created_at;
+		`
+	);
+
+/**
+ * Retrieves unmatched orders for a given event for admin users.
+ *
+ * @param {TransactionSql} sql - The SQL transaction object.
+ * @param {Event} event - The event object related to the bet.
+ * @param {number} price - The price per quantity for the bet.
+ * @param {number} quantity - The quantity of the bet.
+ * @param {number} selectedOption - The ID of the selected option for the bet.
+ *
+ * @returns {Promise<Array<Bet>>} Returns a promise that resolves to an array of Bet objects.
+ * The Bet objects are the unmatched orders for the given event.
+ * The orders are sorted by total price in descending order and creation date in ascending order.
+ * The function uses a SQL query with a WITH clause to create a temporary table of unmatched orders.
+ * It then selects from this table where the cumulative sum of the unmatched quantity is less than or equal to the bet quantity.
+ * It also selects the first order where the cumulative sum is greater than the bet quantity.
+ * This function is specifically for admin users and only retrieves orders where the user ID is not null (i.e. not platform bets).
+ */
+const getUnmatchedOrdersForAdmin = async (sql: TransactionSql, event: Event, price: number, quantity: number, selectedOption: number): Promise<Array<Bet>> =>
+	z.array(Bet).parse(
+		await sql`
+        WITH unmatched_orders AS (SELECT *,
+                                         quantity * price_per_quantity                                  AS total_price,
+                                         SUM(unmatched_quantity)
+                                         OVER (ORDER BY quantity * price_per_quantity DESC, created_at) AS cum_sum
+                                  FROM "event".bet
+                                  WHERE event_id = ${event.id}
+                                    AND unmatched_quantity > 0
+                                    AND user_id IS NOT NULL
+                                    AND type
+                                      = 'buy'
+                                    AND option_id =
+                                        ${selectedOption}
+                                    AND price_per_quantity
+                                      BETWEEN
+                                      ${price - event.slippage}
+                                      AND
+                                      ${price + event.slippage})
+        SELECT *
+        FROM unmatched_orders
+        WHERE cum_sum <= ${quantity}
+        UNION
+        (SELECT *
+         FROM unmatched_orders
+         WHERE cum_sum >= ${quantity}
+         LIMIT 1)
+        ORDER BY total_price DESC, created_at;
+		`
+	);
+
+/**
+ * Removes a bet from the bet queue in the database.
+ *
+ * @param {TransactionSql} sql - The SQL transaction object.
+ * @param {string} betId - The ID of the bet to be removed from the queue.
+ *
+ * @returns {Promise<void>} Returns a promise that resolves when the bet has been removed from the queue.
+ */
+const removeBetFromQueue = async (sql: TransactionSql, betId: string): Promise<void> => {
+	await sql`DELETE
+            FROM "event".bet_queue
+            WHERE bet_id = ${betId}`;
+};
+
+/**
+ * Matches a bet with other bets in the system.
+ *
+ * @param {string} betId - The ID of the bet to be matched.
+ * @param {string} eventId - The ID of the event related to the bet.
+ *
+ * The function performs the following steps:
+ * 1. Initializes empty arrays for storing SQL payloads for matched bets, sell payout transactions, and bet updates.
+ * 2. Begins a SQL transaction and locks the event to prevent concurrent modifications.
+ * 3. Retrieves the bet and event details from the database.
+ * 4. Checks if the event status is "completed". If so, removes the bet from the queue and ends the function.
+ * 5. Retrieves the selected and other options for the bet.
+ * 6. Retrieves unmatched orders for the bet. If the bet is placed by a user, it retrieves all unmatched orders. If the bet is placed by the platform, it only retrieves unmatched buy orders for the selected option.
+ * 7. Iterates over the unmatched orders. For each order, it calculates the matched quantity and updates the remaining quantity of the bet. It also generates SQL payloads for matched bets and sell payout transactions.
+ * 8. If the remaining quantity of the bet is zero and the bet is a sell bet placed by a user, it generates a sell payout transaction.
+ * 9. If the unmatched quantity of the bet has changed, it generates a SQL payload for updating the bet.
+ * 10. Updates the bets in the database using the generated SQL payloads.
+ * 11. Inserts the matched bets and sell payout transactions into the database.
+ * 12. Removes the bet from the queue.
+ *
+ * @returns {Promise<void>} Returns a promise that resolves when the bet has been matched.
+ */
+const matchOrder = async (betId: string, eventId: string): Promise<void> => {
+	const insertMatchedBetSqlPayload: {
+		betId: string;
+		matchedBetId: string;
+		quantity: number;
+		createdAt: Date;
+	}[] = [];
+
+	const insertSellPayoutTxSqlPayload: Transaction[] = [];
+
+	const updateBetSqlPayload: {
+		id: string;
+		unmatchedQuantity: number;
+		profit: number | null;
+		platformCommission: number | null;
+		updatedAt: Date;
+	}[] = [];
+
+	const addUpdateBetSqlPayload = (betId: string, unmatchedQuantity: number, profit: number | null = null, platformCommission: number | null = null) =>
+		updateBetSqlPayload.push({
+			id: betId,
+			unmatchedQuantity,
+			profit,
+			platformCommission,
+			updatedAt: new Date()
+		});
+
+	await db.sql.begin(async (sql) => {
+		await sql`SELECT pg_advisory_xact_lock(hashtext(${eventId}))`;
+		const bet = await getBet(sql, betId);
+		const { optionId, unmatchedQuantity, type, pricePerQuantity } = bet;
+		const event = await getEvent(sql, eventId);
+		if (event.status === "completed") {
+			await removeBetFromQueue(sql, betId);
+			return;
+		}
+		const { selectedOption, otherOption } = await validateOption(eventId, optionId);
+
+		const unmatchedOrders = bet.userId
+			? await getUnmatchedOrders(sql, event, type, pricePerQuantity, unmatchedQuantity, selectedOption.id, otherOption.id)
+			: await getUnmatchedOrdersForAdmin(sql, event, pricePerQuantity, unmatchedQuantity, selectedOption.id);
+		let remainingQuantity = unmatchedQuantity;
+
+		for (const order of unmatchedOrders) {
+			if (remainingQuantity === 0) break;
+
+			const matchedQuantity = remainingQuantity < order.unmatchedQuantity ? remainingQuantity : order.unmatchedQuantity;
+			remainingQuantity -= matchedQuantity;
+
+			insertMatchedBetSqlPayload.push({
+				betId: betId,
+				matchedBetId: order.id,
+				quantity: matchedQuantity,
+				createdAt: new Date()
+			});
+
+			const unmatchedQuantity = order.unmatchedQuantity - matchedQuantity;
+
+			if (order.type === "sell" && unmatchedQuantity === 0 && order.userId) {
+				const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, order);
+
+				addUpdateBetSqlPayload(order.id, unmatchedQuantity, profit, platformCommission);
+				insertSellPayoutTxSqlPayload.push(payoutTxSqlPayload);
+			} else {
+				addUpdateBetSqlPayload(order.id, unmatchedQuantity);
+			}
+		}
+
+		if (remainingQuantity === 0 && bet.type === "sell" && bet.userId) {
+			const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, bet);
+
+			addUpdateBetSqlPayload(bet.id, remainingQuantity, profit, platformCommission);
+			insertSellPayoutTxSqlPayload.push(payoutTxSqlPayload);
+		} else if (unmatchedQuantity !== remainingQuantity) {
+			addUpdateBetSqlPayload(bet.id, remainingQuantity);
+		}
+
+		if (updateBetSqlPayload.length) {
+			const payload = updateBetSqlPayload.map(({ id, unmatchedQuantity, profit, platformCommission, updatedAt }) => [id, unmatchedQuantity, profit, platformCommission, updatedAt]);
+
+			//noinspection SqlResolve
+			updateBetSqlPayload.length &&
+				(await sql`
+          UPDATE "event".bet
+          SET unmatched_quantity  = (update_data.unmatched_quantity)::int,
+              profit              = (update_data.profit)::decimal,
+              platform_commission = (update_data.platform_commission)::decimal,
+              updated_at          = update_data.updated_at
+          FROM (VALUES ${
+						//@ts-ignore
+						sql(payload)
+					}) AS update_data (id, unmatched_quantity, profit, platform_commission, updated_at)
+          WHERE "event".bet.id = update_data.id
+			`);
+		}
+
+		insertMatchedBetSqlPayload.length && (await sql`INSERT INTO "event".matched ${sql(insertMatchedBetSqlPayload)}`);
+		insertSellPayoutTxSqlPayload.length && (await sql`INSERT INTO "wallet".transaction ${sql(insertSellPayoutTxSqlPayload)}`);
+
+		await removeBetFromQueue(sql, betId);
+	});
+};
+
+/**
+ * Flag to prevent concurrent execution of the match queue.
+ * @type {boolean}
+ */
+let runMatchQueueRunning = false;
+
+/**
+ * Asynchronously runs the match queue.
+ *
+ * The function performs the following steps:
+ * 1. Checks if the match queue is already running. If so, it returns immediately.
+ * 2. Sets the flag to indicate that the match queue is running.
+ * 3. Retrieves all bets from the bet queue in the database, ordered by creation date.
+ * 4. Groups the retrieved bets by event.
+ * 5. Iterates over each event and its associated bets. For each bet, it calls the matchOrder function to match the bet.
+ * 6. Resets the flag to indicate that the match queue is not running.
+ *
+ * If an error occurs during the execution of the function, it logs the error and resets the flag.
+ *
+ * @returns {Promise<void>} Returns a promise that resolves when the match queue has been run.
+ */
+const runMatchQueue = async (): Promise<void> => {
+	try {
+		if (runMatchQueueRunning) return;
+		runMatchQueueRunning = true;
+
+		const bets = (await db.sql`
+        SELECT bet_id, event_id
+        FROM "event".bet_queue
+        ORDER BY created_at
+		`) as [
+			{
+				betId: string;
+				eventId: string;
+			}
+		];
+
+		//@ts-ignore Object.groupBy Not implemented in the stable typescript version yet
+		const betsByEvents = Object.groupBy(bets, ({ eventId }) => eventId) as {
+			[eventId: string]: {
+				betId: string;
+				eventId: string;
+			}[];
+		};
+
+		await Promise.all(
+			Object.keys(betsByEvents).map(async (event) => {
+				for (const bet of betsByEvents[event]) {
+					await matchOrder(bet.betId, bet.eventId);
+				}
+			})
+		);
+
+		runMatchQueueRunning = false;
+	} catch (error) {
+		console.error("Error running match queue", error);
+		runMatchQueueRunning = false;
+	}
+};
+
+/**
+ * Sets an interval to run the match queue every 5 seconds.
+ */
+setInterval(runMatchQueue, 5 * 1000);
+
+/**
+ * This function retrieves bets that are eligible for liquidity matching.
+ *
+ * A bet is eligible for liquidity matching if it meets the following conditions:
+ * - The event related to the bet is live and not frozen.
+ * - The bet is placed by a user (not the platform).
+ * - The bet is not a limit order.
+ * - The bet has unmatched quantity.
+ * - The bet was updated more than 20 seconds ago.
+ * - For sell bets, the price per quantity is less than or equal to the platform's remaining liquidity.
+ * - For buy bets, the difference between the win price and the price per quantity is less than or equal to the platform's remaining liquidity.
+ * - If the event does not allow liquidity in between, the price per quantity is either less than or equal to the minimum liquidity percentage of the win price, or greater than or equal to the maximum liquidity percentage of the win price.
+ * - If the event allows liquidity in between, the price per quantity is between the minimum and maximum liquidity percentages of the win price.
+ *
+ * The returned bets are sorted by total price in descending order and creation date in ascending order.
+ *
+ * @returns {Promise<Array<Bet>>} Returns a promise that resolves to an array of Bet objects.
+ * The Bet objects are the bets that are eligible for liquidity matching.
+ */
+const getLiquidityMatchableBets = async (): Promise<Array<Bet>> =>
+	z.array(Bet).parse(
+		await db.sql`
+        SELECT bet.*
+        FROM "event".bet
+                 JOIN "event".event ON bet.event_id = event.id
+        WHERE event.status = 'live'
+          AND event.frozen = false
+          AND bet.user_id IS NOT NULL
+          AND limit_order = false
+          AND bet.unmatched_quantity > 0
+          AND bet.updated_at < NOW() - INTERVAL '20 seconds'
+          AND ((bet.type = 'sell' AND bet.price_per_quantity <= event.platform_liquidity_left) OR
+               (bet.type = 'buy' AND event.win_price - bet.price_per_quantity <= event.platform_liquidity_left))
+          AND ((event.liquidity_in_between = false AND
+                (bet.price_per_quantity <= event.win_price * event.min_liquidity_percentage / 100 OR
+                 bet.price_per_quantity >= event.win_price * event.max_liquidity_percentage / 100))
+            OR (event.liquidity_in_between = true AND
+                bet.price_per_quantity BETWEEN event.win_price * event.min_liquidity_percentage / 100 AND event.win_price * event.max_liquidity_percentage / 100))
+        ORDER BY bet.price_per_quantity * bet.quantity DESC, bet.created_at`
+	);
+
+/**
+ * This function places a counter liquidity bet for a given bet and event.
+ *
+ * A counter liquidity bet is a bet that is placed by the platform to match a user's bet.
+ * The function performs the following steps:
+ * - It calculates the unmatched quantity of the bet.
+ * - If the bet is a sell bet, it generates a buy bet with the same price per quantity and quantity as the sell bet.
+ * - If the unmatched quantity of the sell bet is zero, it generates a sell payout transaction and updates the sell bet.
+ * - If the bet is a buy bet, it generates a buy bet with the win price of the event minus the price per quantity of the buy bet.
+ * - It generates a matched bet with the bet and the counter buy bet.
+ * - It updates the bet with the new unmatched quantity, profit, and platform commission.
+ * - It inserts the counter buy bet and the matched bet into the database.
+ * - It updates the event with the new platform liquidity left.
+ * - It then generates a sell bet with the same price per quantity and quantity as the counter buy bet.
+ * - It inserts the counter sell bet into the database and adds it to the bet queue.
+ *
+ * @param {TransactionSql} sql - The SQL transaction object.
+ * @param {Bet} bet - The bet object for which the counter liquidity bet is being placed.
+ * @param {Event} event - The event object related to the bet.
+ * @param {number} selectedOption - The ID of the selected option for the bet.
+ * @param {number} otherOption - The ID of the other option for the bet.
+ * @param {number} quantity - The quantity of the bet.
+ *
+ * @returns {Promise<void>} Returns a promise that resolves when the counter liquidity bet has been placed.
+ */
+const placeCounterLiquidityBet = async (sql: TransactionSql, bet: Bet, event: Event, selectedOption: number, otherOption: number, quantity: number): Promise<void> => {
+	let counterBuyBet: Bet;
+	const unmatchedQuantity = bet.unmatchedQuantity - quantity;
+
+	if (bet.type === "sell") {
+		counterBuyBet = generateInsertBetSqlPayload(null, bet.eventId, selectedOption, bet.pricePerQuantity, 0, quantity, "buy", bet.limitOrder, quantity, null, null, 0);
+
+		if (unmatchedQuantity === 0) {
+			const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, bet);
+
+			await sql`INSERT INTO "wallet".transaction ${sql(payoutTxSqlPayload)}`;
+
+			bet = {
+				...bet,
+				profit,
+				platformCommission,
+				unmatchedQuantity
+			};
+		}
+	} else {
+		counterBuyBet = generateInsertBetSqlPayload(null, bet.eventId, otherOption, event.winPrice - bet.pricePerQuantity, 0, quantity, "buy", bet.limitOrder, quantity, null, null, 0);
+	}
+
+	const insertMatchedBetSqlPayload = {
+		betId: counterBuyBet.id,
+		matchedBetId: bet.id,
+		quantity,
+		createdAt: new Date()
+	};
+
+	const updateBetSqlPayload = {
+		profit: bet.profit,
+		platformCommission: bet.platformCommission,
+		unmatchedQuantity,
+		updated_at: new Date()
+	};
+	await sql`INSERT INTO "event".bet ${sql(counterBuyBet)}`;
+	await sql`UPDATE "event".bet
+            SET ${sql(updateBetSqlPayload)}
+            WHERE id = ${bet.id}`;
+
+	await sql`INSERT INTO "event".matched ${sql(insertMatchedBetSqlPayload)}`;
+	await sql`UPDATE "event".event
+            SET platform_liquidity_left = platform_liquidity_left - ${counterBuyBet.pricePerQuantity * quantity},
+                updated_at              = ${new Date()}
+            WHERE id = ${event.id}`;
+
+	const counterSellBet = generateInsertBetSqlPayload(
+		null,
+		bet.eventId,
+		counterBuyBet.optionId,
+		counterBuyBet.pricePerQuantity,
+		0,
+		quantity,
+		"sell",
+		counterBuyBet.limitOrder,
+		null,
+		counterBuyBet.id,
+		counterBuyBet.buyBetPricePerQuantity
+	);
+
+	const res = Bet.parse((await sql`INSERT INTO "event".bet ${sql(counterSellBet)} RETURNING *`)[0]);
+	await addToBetQueue(sql, res);
+};
+
+/**
+ * This function matches a bet with the liquidity engine.
+ *
+ * The liquidity engine is a system that provides liquidity to the betting platform by placing counter bets.
+ * The function performs the following steps:
+ * - It validates the selected option for the bet.
+ * - It begins a SQL transaction and locks the event to prevent concurrent modifications.
+ * - It retrieves the bet and event details from the database.
+ * - If the event status is "completed" or the event is frozen, it returns immediately.
+ * - It retrieves the bet again to check if any other bet has already matched with it.
+ * - It calculates the price per quantity for the bet. If the bet is a sell bet, it uses the bet's price per quantity. If the bet is a buy bet, it uses the difference between the win price of the event and the price per quantity of the bet.
+ * - If the price per quantity is greater than the platform's remaining liquidity, it returns immediately.
+ * - It calculates the quantity that can be matched by the liquidity engine by dividing the platform's remaining liquidity by the price per quantity.
+ * - It places a counter liquidity bet for the bet with the calculated quantity.
+ *
+ * @param {Bet} bet - The bet object to be matched with the liquidity engine.
+ *
+ * @returns {Promise<void>} Returns a promise that resolves when the bet has been matched with the liquidity engine.
+ */
+const matchWithLiquidityEngine = async (bet: Bet) => {
+	const { selectedOption, otherOption } = await validateOption(bet.eventId, bet.optionId);
+
+	await db.sql.begin(async (sql) => {
+		await sql`SELECT pg_advisory_xact_lock(hashtext(${bet.eventId}))`;
+		const event = await getEvent(sql, bet.eventId);
+
+		if (event.status === "completed" || event.frozen) return;
+
+		bet = await getBet(sql, bet.id);
+
+		const pricePerQuantity = bet.type === "sell" ? bet.pricePerQuantity : event.winPrice - bet.pricePerQuantity;
+		if (pricePerQuantity > event.platformLiquidityLeft) return;
+		const liquidityMatchableQuantity = Math.floor(event.platformLiquidityLeft / pricePerQuantity);
+
+		await placeCounterLiquidityBet(sql, bet, event, selectedOption.id, otherOption.id, liquidityMatchableQuantity > bet.unmatchedQuantity ? bet.unmatchedQuantity : liquidityMatchableQuantity);
+	});
+};
+
+/**
+ * Flag to prevent concurrent execution of the liquidity engine.
+ */
+let liquidityEngineRunning = false;
+
+/**
+ * This function runs the liquidity engine.
+ *
+ * The liquidity engine is a system that provides liquidity to the betting platform by placing counter bets.
+ * The function performs the following steps:
+ * 1. Checks if the liquidity engine is already running. If so, it returns immediately.
+ * 2. Sets the flag to indicate that the liquidity engine is running.
+ * 3. Retrieves all bets that are eligible for liquidity matching.
+ * 4. Groups the retrieved bets by event.
+ * 5. Iterates over each event and its associated bets. For each bet, it calls the matchWithLiquidityEngine function to match the bet with the liquidity engine.
+ * 6. Resets the flag to indicate that the liquidity engine is not running.
+ *
+ * If an error occurs during the execution of the function, it logs the error and resets the flag.
+ *
+ * @returns {Promise<void>} Returns a promise that resolves when the liquidity engine has been run.
+ */
+const liquidityEngine = async (): Promise<void> => {
+	try {
+		if (liquidityEngineRunning) return;
+		liquidityEngineRunning = true;
+		const bets = await getLiquidityMatchableBets();
+
+		//@ts-ignore Object.groupBy Not implemented in the stable typescript version yet
+		const betsByEvents = Object.groupBy(bets, ({ eventId }) => eventId) as {
+			[eventId: string]: Bet[];
+		};
+
+		await Promise.all(
+			Object.keys(betsByEvents).map(async (event) => {
+				for (const bet of betsByEvents[event]) {
+					await matchWithLiquidityEngine(bet);
+				}
+			})
+		);
+
+		liquidityEngineRunning = false;
+	} catch (e) {
+		console.error("Error running liquidityEngine", e);
+		liquidityEngineRunning = false;
+	}
+};
+
+/**
+ * Sets an interval to run the liquidity engine every 20 seconds.
+ */
+setInterval(liquidityEngine, 20 * 1000);
+
 //
 // const cancelBets = async (sql: TransactionSql, event: Event, bets: Bet[]) => {
 // 	if (!bets.length) return;
@@ -1098,4 +1347,4 @@ const getProfitAndCommission = (
 //
 // setInterval(initEventPayout, 5 * 1000);
 //
-export { Bet, BetType, BetStatus, BetFilter, placeBet, getBets };
+export { Bet, BetType, BetStatus, BetFilter, placeBet, getBets, cancelBet };

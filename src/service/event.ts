@@ -89,6 +89,24 @@ const getEvent = async (sql: TransactionSql | Sql, id: string): Promise<Event> =
 	if (!event) throw new ErrorUtil.HttpException(404, "Event not found.");
 	return Event.parse(event);
 };
+
+/**
+ * This function retrieves an option from the database using its ID.
+ *
+ * @async
+ * @function getOption
+ * @param {number} id - The ID of the option to retrieve.
+ * @returns {Promise<Option>} - Returns a promise that resolves to an Option object if found, otherwise it throws an HttpException with status 404.
+ * @throws {ErrorUtil.HttpException} - Throws an HttpException if the option is not found.
+ */
+const getOption = async (id: number): Promise<Option> => {
+	const res = await db.sql`SELECT *
+                           FROM "event".option
+                           WHERE id = ${id};`;
+	if (!res.length) throw new ErrorUtil.HttpException(404, "Option not found");
+	return Option.parse(res[0]);
+};
+
 /**
  * This function creates or updates a category in the database.
  * If the payload contains an ID, it updates the category with the given ID.
@@ -615,6 +633,23 @@ const changeEventStatus = async () => {
  */
 setInterval(changeEventStatus, 5 * 1000);
 
+/**
+ * This function is set to run every 5 seconds.
+ * It updates the 'frozen' status of all 'live' events in the database to 'true' if the current time is past the 'freeze_at' time of the event.
+ * The 'frozen' status of an event determines whether bets can be placed on the event.
+ * When an event is 'frozen', no more bets can be placed on the event.
+ * The function uses a SQL query to update the 'frozen' status of the events.
+ *
+ * @async
+ */
+setInterval(async () => {
+	await db.sql`UPDATE "event".event
+               SET frozen = true
+               WHERE freeze_at < NOW()
+                 AND status = 'live'
+                 AND frozen = false;`;
+}, 5 * 1000);
+
 export {
 	EventStatus,
 	createEvent,
@@ -636,5 +671,6 @@ export {
 	getEvents,
 	getSource,
 	updateEvent,
-	updateEventCategories
+	updateEventCategories,
+	getOption
 };

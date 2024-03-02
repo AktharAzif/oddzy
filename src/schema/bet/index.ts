@@ -24,7 +24,8 @@ builder.mutationField("placeBet", (t) =>
 		validate: {
 			schema: PlaceBetPayload
 		},
-		resolve: async (_, arg, { user }) => await BetService.placeBet((user as UserService.User).id, arg)
+		resolve: async (_, arg, { user }) => await BetService.placeBet((user as UserService.User).id, arg),
+		description: "Place a bet"
 	})
 );
 
@@ -64,7 +65,25 @@ builder.queryField("bets", (t) =>
 			const userId = user && user.id;
 			return await BetService.getBets(eventId, userId, status, filter, type, page - 1, limit);
 		},
-		description: "Get all bets filtered by user and event. Either eventId or userId is required"
+		description: "Get all bets filtered by user, event, status, filter and type. Either userId or eventId is required"
+	})
+);
+
+builder.mutationField("cancelBet", (t) =>
+	t.field({
+		type: Bet,
+		authScopes: (_, __, { user }) => (user && user.access) || false,
+		args: {
+			betId: t.arg.string({ required: true, description: "The unique identifier of the bet" }),
+			quantity: t.arg.int({
+				required: true,
+				validate: { positive: true },
+				description: "The quantity of the bet to be cancelled"
+			}),
+			eventId: t.arg.string({ required: true, description: "The unique identifier of the event the bet is placed on" })
+		},
+		resolve: async (_, { betId, quantity, eventId }, { user }) => await BetService.cancelBet((user as UserService.User).id, eventId, betId, quantity),
+		description: "Cancel a bet"
 	})
 );
 
