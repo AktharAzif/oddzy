@@ -567,7 +567,7 @@ const getCancelBetSqlPayload = (
  * @throws {ErrorUtil.HttpException} Throws an HttpException with status 400 if the bet is in the top 5 and check is false or not provided.
  */
 const isTop5Bet = async (sql: TransactionSql | Sql, eventId: string, betId: string, check?: boolean): Promise<Bet | Boolean> => {
-	const [bet] = z.array(z.intersection(Bet, z.object({ rowNumber: z.number() }))).parse(
+	const [bet] = z.array(z.intersection(Bet, z.object({ rowNumber: z.coerce.number() }))).parse(
 		await sql`
         SELECT *
         FROM (SELECT *, ROW_NUMBER() OVER (ORDER BY price_per_quantity * quantity DESC, created_at) as row_number
