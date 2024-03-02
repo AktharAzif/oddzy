@@ -98,7 +98,6 @@ const getBets = async (userId: string | null = null, payload: BetSchema.GetBetsP
 	const bets = db.sql`SELECT b.*
                       FROM "event".bet b ${token || chain ? db.sql`JOIN "event".event e ON b.event_id = e.id` : db.sql``}
                       WHERE true ${eventId ? db.sql`AND b.event_id = ${eventId}` : db.sql``} ${userId ? db.sql`AND b.user_id = ${userId}` : db.sql``} ${type ? db.sql`AND b.type = ${type}` : db.sql``} ${status === "live" ? db.sql`AND b.profit IS NULL` : status === "closed" ? db.sql`AND b.profit IS NOT NULL` : db.sql``} ${filter === "day" ? db.sql`AND b.created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? db.sql`AND b.created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? db.sql`AND b.created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? db.sql`AND b.created_at > NOW() - INTERVAL '1 year'` : db.sql``} ${token ? db.sql`AND e.token = ${token}` : db.sql``} ${chain ? db.sql`AND e.chain = ${chain}` : db.sql``}
-
                       ORDER BY created_at DESC
                       LIMIT ${limit} OFFSET ${page * limit}`;
 	const total = db.sql`SELECT COUNT(*)

@@ -91,7 +91,7 @@ const Bet = builder.objectRef<BetService.Bet>("Bet").implement({
 		cancellable: t.field({
 			authScopes: (_, __, { user }) => (user && user.access) || false,
 			type: "Boolean",
-			resolve: async ({ id, eventId }) => (await BetService.isTop5Bet(db.sql, eventId, id, true)) as boolean,
+			resolve: async ({ id, eventId }) => !(await BetService.isTop5Bet(db.sql, eventId, id, true)) as boolean,
 			description: "Indicates whether the bet can be cancelled or not"
 		})
 	}),
