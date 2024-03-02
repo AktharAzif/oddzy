@@ -94,15 +94,19 @@ const getBets = async (eventId: string | null = null, userId: string | null = nu
 	const bets = db.sql`SELECT *
                       FROM "event".bet
                       WHERE true
-                        AND ${eventId ? db.sql`event_id = ${eventId}` : db.sql``}
-                        AND ${userId ? db.sql`user_id = ${userId}` : db.sql``}
+                          ${eventId ? db.sql`AND event_id = ${eventId}` : db.sql``} ${userId ? db.sql`AND user_id = ${userId}` : db.sql``}
                       ORDER BY created_at DESC
                       LIMIT ${limit} OFFSET ${page * limit}`;
 	const total = db.sql`SELECT COUNT(*)
                        FROM "event".bet
                        WHERE true
-                         AND ${eventId ? db.sql`event_id = ${eventId}` : db.sql``}
-                         AND ${userId ? db.sql`user_id = ${userId}` : db.sql``}` as Promise<[{ count: string }]>;
+                           ${eventId ? db.sql`AND event_id = ${eventId}` : db.sql``} ${userId ? db.sql`AND user_id = ${userId}` : db.sql``}` as Promise<
+		[
+			{
+				count: string;
+			}
+		]
+	>;
 
 	const [betsRes, [totalRes]] = await Promise.all([bets, total]);
 
@@ -255,9 +259,9 @@ const validateSellBet = async (sql: TransactionSql, totalPrice: number, quantity
 	const rewardAmountUsed = totalPrice < buyBet.rewardAmountUsed ? totalPrice : buyBet.rewardAmountUsed;
 
 	await sql`UPDATE "event".bet
-            SET sold_quantity      = sold_quantity + ${quantity},
+            SET sold_quantity = sold_quantity + ${quantity},
                 reward_amount_used = reward_amount_used - ${rewardAmountUsed},
-                updated_at         = ${new Date()}
+                updated_at = ${new Date()}
             WHERE id = ${buyBet.id}`;
 
 	return rewardAmountUsed;
