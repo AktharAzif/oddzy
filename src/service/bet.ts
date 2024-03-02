@@ -10,6 +10,12 @@ import { generateTxSqlPayload, getUserTokenBalance, type Transaction } from "./w
 const BetType = z.enum(["buy", "sell"]);
 type BetType = z.infer<typeof BetType>;
 
+const BetStatus = z.enum(["live", "closed"]);
+type BetStatus = z.infer<typeof BetStatus>;
+
+const BetFilter = z.enum(["day", "week", "month", "year", "all"]);
+type BetFilter = z.infer<typeof BetFilter>;
+
 const Bet = z.object({
 	id: z.string().default(() => createId()),
 	eventId: z.string(),
@@ -74,33 +80,43 @@ const getBet = async (sql: TransactionSql | Sql, betId: string): Promise<Bet> =>
 };
 
 /**
- * This function retrieves bets from the database based on the provided eventId and userId.
- * If neither eventId nor userId is provided, it throws an HttpException with status 400.
- * The function also supports pagination through the page and limit parameters.
+ * Retrieves a paginated list of bets from the database based on the provided filters.
  *
- * @param {string | null} eventId - The ID of the event to retrieve bets for. Default is null.
- * @param {string | null} userId - The ID of the user to retrieve bets for. Default is null.
+ * @param {string | null} eventId - The ID of the event to filter bets by. If null, no filtering is done by event.
+ * @param {string | null} userId - The ID of the user to filter bets by. If null, no filtering is done by user.
+ * @param {BetStatus | null} status - The status of the bets to filter by. If null, no filtering is done by status.
+ * @param {BetFilter | null} filter - The time filter for the bets. If null, no time filtering is done.
+ * @param {BetType | null} type - The type of the bets to filter by. If null, no filtering is done by type.
  * @param {number} page - The page number for pagination.
- * @param {number} limit - The number of bets to retrieve per page.
+ * @param {number} limit - The number of bets per page for pagination.
  *
- * @returns {Promise<BetSchema.BetPaginatedResponse>} Returns a promise that resolves to a BetPaginatedResponse object.
- * The BetPaginatedResponse object contains an array of Bet objects, the total number of bets, the current page number, and the limit.
+ * @returns {Promise<BetSchema.BetPaginatedResponse>} Returns a promise that resolves to a paginated response of bets.
+ * The response includes the array of bets, the total number of bets, the current page, and the limit.
  *
  * @throws {ErrorUtil.HttpException} Throws an HttpException if neither eventId nor userId is provided.
  */
-const getBets = async (eventId: string | null = null, userId: string | null = null, page: number, limit: number): Promise<BetSchema.BetPaginatedResponse> => {
+const getBets = async (
+	eventId: string | null = null,
+	userId: string | null = null,
+	status: BetStatus | null = null,
+	filter: BetFilter | null = null,
+	type: BetType | null = null,
+	page: number,
+	limit: number
+): Promise<BetSchema.BetPaginatedResponse> => {
 	if (!eventId && !userId) throw new ErrorUtil.HttpException(400, "EventId or UserId is required.");
 
 	const bets = db.sql`SELECT *
                       FROM "event".bet
                       WHERE true
-                          ${eventId ? db.sql`AND event_id = ${eventId}` : db.sql``} ${userId ? db.sql`AND user_id = ${userId}` : db.sql``}
+                          ${eventId ? db.sql`AND event_id = ${eventId}` : db.sql``} ${userId ? db.sql`AND user_id = ${userId}` : db.sql``} ${type ? db.sql`AND type = ${type}` : db.sql``} ${status === "live" ? db.sql`AND profit IS NULL` : status === "closed" ? db.sql`AND profit IS NOT NULL` : db.sql``} ${filter === "day" ? db.sql`AND created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? db.sql`AND created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? db.sql`AND created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? db.sql`AND created_at > NOW() - INTERVAL '1 year'` : db.sql``}
+
                       ORDER BY created_at DESC
                       LIMIT ${limit} OFFSET ${page * limit}`;
 	const total = db.sql`SELECT COUNT(*)
                        FROM "event".bet
                        WHERE true
-                           ${eventId ? db.sql`AND event_id = ${eventId}` : db.sql``} ${userId ? db.sql`AND user_id = ${userId}` : db.sql``}` as Promise<
+                           ${eventId ? db.sql`AND event_id = ${eventId}` : db.sql``} ${userId ? db.sql`AND user_id = ${userId}` : db.sql``} ${type ? db.sql`AND type = ${type}` : db.sql``} ${status === "live" ? db.sql`AND profit IS NULL` : status === "closed" ? db.sql`AND profit IS NOT NULL` : db.sql``} ${filter === "day" ? db.sql`AND created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? db.sql`AND created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? db.sql`AND created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? db.sql`AND created_at > NOW() - INTERVAL '1 year'` : db.sql``}` as Promise<
 		[
 			{
 				count: string;
@@ -259,9 +275,9 @@ const validateSellBet = async (sql: TransactionSql, totalPrice: number, quantity
 	const rewardAmountUsed = totalPrice < buyBet.rewardAmountUsed ? totalPrice : buyBet.rewardAmountUsed;
 
 	await sql`UPDATE "event".bet
-            SET sold_quantity = sold_quantity + ${quantity},
+            SET sold_quantity      = sold_quantity + ${quantity},
                 reward_amount_used = reward_amount_used - ${rewardAmountUsed},
-                updated_at = ${new Date()}
+                updated_at         = ${new Date()}
             WHERE id = ${buyBet.id}`;
 
 	return rewardAmountUsed;
@@ -376,19 +392,41 @@ const placeBet = async (userId: string, payload: BetSchema.PlaceBetPayload): Pro
 	});
 };
 
-//
-// const getProfitAndCommission = (quantity: number, initialPrice: number, finalPrice: number, platformFees: number) => {
-// 	const initialPriceTotal = quantity * initialPrice;
-// 	const finalPriceTotal = quantity * finalPrice;
-//
-// 	const earned = finalPriceTotal - initialPriceTotal;
-// 	const commission = earned > 0 ? (finalPriceTotal * platformFees) / 100 : 0;
-// 	const profit = earned - commission < 0 ? earned : earned - commission;
-// 	const platformCommission = profit === earned ? 0 : commission;
-// 	const amount = finalPriceTotal - platformCommission;
-//
-// 	return { amount, profit, platformCommission };
-// };
+/**
+ * Calculates the profit, commission and amount for a transaction.
+ *
+ * @param {number} quantity - The quantity of the item being transacted.
+ * @param {number} initialPrice - The initial price per item.
+ * @param {number} finalPrice - The final price per item.
+ * @param {number} platformFees - The platform fees as a percentage.
+ *
+ * @returns {Object} An object containing the calculated amount, profit and platform commission.
+ * The amount is the total final price minus the platform commission.
+ * The profit is the earned amount minus the commission, or the earned amount if it's less than zero.
+ * The platform commission is zero if the profit equals the earned amount, otherwise it's the calculated commission.
+ */
+const getProfitAndCommission = (
+	quantity: number,
+	initialPrice: number,
+	finalPrice: number,
+	platformFees: number
+): {
+	amount: number;
+	profit: number;
+	platformCommission: number;
+} => {
+	const initialPriceTotal = quantity * initialPrice;
+	const finalPriceTotal = quantity * finalPrice;
+
+	const earned = finalPriceTotal - initialPriceTotal;
+	const commission = earned > 0 ? (finalPriceTotal * platformFees) / 100 : 0;
+	const profit = earned - commission < 0 ? earned : earned - commission;
+	const platformCommission = profit === earned ? 0 : commission;
+	const amount = finalPriceTotal - platformCommission;
+
+	return { amount, profit, platformCommission };
+};
+
 //
 // const getSellPayoutTxSqlPayload = (event: Event, sellBet: Bet) => {
 // 	//sellBet will always have butBetPricePerQuantity as number because it's a sell bet. So, casting it as number
@@ -1060,4 +1098,4 @@ const placeBet = async (userId: string, payload: BetSchema.PlaceBetPayload): Pro
 //
 // setInterval(initEventPayout, 5 * 1000);
 //
-export { Bet, BetType, placeBet, getBets };
+export { Bet, BetType, BetStatus, BetFilter, placeBet, getBets };

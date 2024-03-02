@@ -2,7 +2,18 @@ import { builder } from "../../config";
 import { BetService } from "../../service";
 
 const BetTypeEnum = builder.enumType("BetTypeEnum", {
-	values: BetService.BetType.options
+	values: BetService.BetType.options,
+	description: "The type of the bet. It can be either buy or sell"
+});
+
+const BetStatusEnum = builder.enumType("BetStatusEnum", {
+	values: BetService.BetStatus.options,
+	description: "The status of the bet. It can be either live or closed"
+});
+
+const BetFilterEnum = builder.enumType("BetFilterEnum", {
+	values: BetService.BetFilter.options,
+	description: "The filter to be applied to the bets based on time. It can be either day, week, month, year or all"
 });
 
 const Bet = builder.objectRef<BetService.Bet>("Bet").implement({
@@ -98,4 +109,4 @@ BetPaginatedResponse.implement({
 });
 type BetPaginatedResponse = typeof BetPaginatedResponse.$inferType;
 
-export { Bet, BetTypeEnum, BetPaginatedResponse };
+export { Bet, BetTypeEnum, BetStatusEnum, BetFilterEnum, BetPaginatedResponse };
