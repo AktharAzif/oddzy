@@ -949,6 +949,7 @@ setInterval(runMatchQueue, 5 * 1000);
  * - For buy bets, the difference between the win price and the price per quantity is less than or equal to the platform's remaining liquidity.
  * - If the event does not allow liquidity in between, the price per quantity is either less than or equal to the minimum liquidity percentage of the win price, or greater than or equal to the maximum liquidity percentage of the win price.
  * - If the event allows liquidity in between, the price per quantity is between the minimum and maximum liquidity percentages of the win price.
+ * - The bet is not in the top 5 bets for the event.
  *
  * The returned bets are sorted by total price in descending order and creation date in ascending order.
  *
@@ -958,23 +959,27 @@ setInterval(runMatchQueue, 5 * 1000);
 const getLiquidityMatchableBets = async (): Promise<Array<Bet>> =>
 	z.array(Bet).parse(
 		await db.sql`
-        SELECT bet.*
-        FROM "event".bet
-                 JOIN "event".event ON bet.event_id = event.id
-        WHERE event.status = 'live'
-          AND event.frozen = false
-          AND bet.user_id IS NOT NULL
-          AND limit_order = false
-          AND bet.unmatched_quantity > 0
-          AND bet.updated_at < NOW() - INTERVAL '20 seconds'
-          AND ((bet.type = 'sell' AND bet.price_per_quantity <= event.platform_liquidity_left) OR
-               (bet.type = 'buy' AND event.win_price - bet.price_per_quantity <= event.platform_liquidity_left))
-          AND ((event.liquidity_in_between = false AND
-                (bet.price_per_quantity <= event.win_price * event.min_liquidity_percentage / 100 OR
-                 bet.price_per_quantity >= event.win_price * event.max_liquidity_percentage / 100))
-            OR (event.liquidity_in_between = true AND
-                bet.price_per_quantity BETWEEN event.win_price * event.min_liquidity_percentage / 100 AND event.win_price * event.max_liquidity_percentage / 100))
-        ORDER BY bet.price_per_quantity * bet.quantity DESC, bet.created_at`
+        SELECT *
+        FROM (SELECT bet.*,
+                     ROW_NUMBER()
+                     OVER (PARTITION BY bet.event_id ORDER BY bet.price_per_quantity * bet.quantity DESC, bet.created_at) as row_number
+              FROM "event".bet
+                       JOIN "event".event ON bet.event_id = event.id
+              WHERE event.status = 'live'
+                AND event.frozen = false
+                AND bet.user_id IS NOT NULL
+                AND limit_order = false
+                AND bet.unmatched_quantity > 0
+                AND bet.updated_at < NOW() - INTERVAL '20 seconds'
+                AND ((bet.type = 'sell' AND bet.price_per_quantity <= event.platform_liquidity_left) OR
+                     (bet.type = 'buy' AND event.win_price - bet.price_per_quantity <= event.platform_liquidity_left))
+                AND ((event.liquidity_in_between = false AND
+                      (bet.price_per_quantity <= event.win_price * event.min_liquidity_percentage / 100 OR
+                       bet.price_per_quantity >= event.win_price * event.max_liquidity_percentage / 100))
+                  OR (event.liquidity_in_between = true AND
+                      bet.price_per_quantity BETWEEN event.win_price * event.min_liquidity_percentage / 100 AND event.win_price * event.max_liquidity_percentage / 100))) as bets
+        WHERE row_number > 5
+        ORDER BY row_number`
 	);
 
 /**
