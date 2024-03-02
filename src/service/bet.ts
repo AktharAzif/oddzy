@@ -555,6 +555,34 @@ const getCancelBetSqlPayload = (
 };
 
 /**
+ * Checks if a bet is within the top 5 bets for a given event.
+ *
+ * @param {TransactionSql | Sql} sql - The SQL transaction object.
+ * @param {string} eventId - The ID of the event.
+ * @param {string} betId - The ID of the bet.
+ * @param {boolean} [check=false] - Optional parameter. If true, the function returns a boolean indicating whether the bet is in the top 5. If false or not provided, the function throws an exception if the bet is in the top 5.
+ *
+ * @returns {Promise<Bet | Boolean>} Returns a promise that resolves to a Bet object if the bet is not in the top 5 and check is false or not provided. If check is true, it returns a boolean indicating whether the bet is in the top 5.
+ *
+ * @throws {ErrorUtil.HttpException} Throws an HttpException with status 400 if the bet is in the top 5 and check is false or not provided.
+ */
+const isTop5Bet = async (sql: TransactionSql | Sql, eventId: string, betId: string, check?: boolean): Promise<Bet | Boolean> => {
+	const [bet] = z.array(z.intersection(Bet, z.object({ rowNumber: z.number() }))).parse(
+		await sql`
+        SELECT *
+        FROM (SELECT *, ROW_NUMBER() OVER (ORDER BY price_per_quantity * quantity DESC, created_at) as row_number
+              FROM "event".bet
+              WHERE event_id = ${eventId}) as subquery
+        WHERE id = ${betId}`
+	);
+
+	if (check) return bet.rowNumber <= 5;
+
+	if (bet.rowNumber <= 5) throw new ErrorUtil.HttpException(400, "Cannot cancel, bet is in priority queue.");
+	return bet;
+};
+
+/**
  * Cancels a bet for a given user and event.
  *
  * @param {string} userId - The ID of the user cancelling the bet.
@@ -574,7 +602,7 @@ const cancelBet = async (userId: string, eventId: string, betId: string, quantit
 		//Locking the event to prevent concurrent modifications to the bet from matching queue
 		await sql`SELECT pg_advisory_xact_lock(hashtext(${eventId}))`;
 		const event = await validateEvent(sql, eventId);
-		const bet = await getBet(sql, betId);
+		const bet = (await isTop5Bet(sql, eventId, betId)) as Bet;
 
 		if (quantity > bet.unmatchedQuantity) throw new ErrorUtil.HttpException(400, "Quantity is higher than unmatched quantity.");
 
@@ -921,6 +949,7 @@ setInterval(runMatchQueue, 5 * 1000);
  * - For buy bets, the difference between the win price and the price per quantity is less than or equal to the platform's remaining liquidity.
  * - If the event does not allow liquidity in between, the price per quantity is either less than or equal to the minimum liquidity percentage of the win price, or greater than or equal to the maximum liquidity percentage of the win price.
  * - If the event allows liquidity in between, the price per quantity is between the minimum and maximum liquidity percentages of the win price.
+ * - The bet is not in the top 5 bets for the event.
  *
  * The returned bets are sorted by total price in descending order and creation date in ascending order.
  *
@@ -946,7 +975,8 @@ const getLiquidityMatchableBets = async (): Promise<Array<Bet>> =>
                  bet.price_per_quantity >= event.win_price * event.max_liquidity_percentage / 100))
             OR (event.liquidity_in_between = true AND
                 bet.price_per_quantity BETWEEN event.win_price * event.min_liquidity_percentage / 100 AND event.win_price * event.max_liquidity_percentage / 100))
-        ORDER BY bet.price_per_quantity * bet.quantity DESC, bet.created_at`
+        ORDER BY bet.price_per_quantity * bet.quantity DESC, bet.created_at
+        OFFSET 5`
 	);
 
 /**
@@ -1334,4 +1364,4 @@ setInterval(liquidityEngine, 20 * 1000);
 //
 // setInterval(initEventPayout, 5 * 1000);
 //
-export { Bet, BetType, BetStatus, BetFilter, placeBet, getBets, cancelBet };
+export { Bet, BetType, BetStatus, BetFilter, placeBet, getBets, cancelBet, isTop5Bet };

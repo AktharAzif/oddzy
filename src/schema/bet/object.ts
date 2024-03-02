@@ -87,6 +87,12 @@ const Bet = builder.objectRef<BetService.Bet>("Bet").implement({
 			type: "Date",
 			resolve: (parent) => parent.updatedAt,
 			description: "The date and time when the bet was last updated. Only admin can see this field"
+		}),
+		cancellable: t.field({
+			authScopes: (_, __, { user }) => (user && user.access) || false,
+			type: "Boolean",
+			resolve: async ({ id, eventId }) => (await BetService.isTop5Bet(db.sql, eventId, id, true)) as boolean,
+			description: "Indicates whether the bet can be cancelled or not"
 		})
 	}),
 	description: "The bet response object"
