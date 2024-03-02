@@ -80,43 +80,30 @@ const getBet = async (sql: TransactionSql | Sql, betId: string): Promise<Bet> =>
 };
 
 /**
- * Retrieves a paginated list of bets from the database based on the provided filters.
+ *  Retrieves bets based on the provided parameters.
  *
- * @param {string | null} eventId - The ID of the event to filter bets by. If null, no filtering is done by event.
- * @param {string | null} userId - The ID of the user to filter bets by. If null, no filtering is done by user.
- * @param {BetStatus | null} status - The status of the bets to filter by. If null, no filtering is done by status.
- * @param {BetFilter | null} filter - The time filter for the bets. If null, no time filtering is done.
- * @param {BetType | null} type - The type of the bets to filter by. If null, no filtering is done by type.
+ * @param {string | null} userId - The ID of the user whose bets are to be retrieved. If null, bets for all users are retrieved.
+ * @param {BetSchema.GetBetsPayload} payload - An object containing the parameters for retrieving the bets.
  * @param {number} page - The page number for pagination.
- * @param {number} limit - The number of bets per page for pagination.
+ * @param {number} limit - The number of bets to retrieve per page.
  *
- * @returns {Promise<BetSchema.BetPaginatedResponse>} Returns a promise that resolves to a paginated response of bets.
- * The response includes the array of bets, the total number of bets, the current page, and the limit.
+ * @returns {Promise<BetSchema.BetPaginatedResponse>} Returns a promise that resolves to an object containing the retrieved bets, the total number of bets, the current page, and the limit.
  *
  * @throws {ErrorUtil.HttpException} Throws an HttpException if neither eventId nor userId is provided.
  */
-const getBets = async (
-	eventId: string | null = null,
-	userId: string | null = null,
-	status: BetStatus | null = null,
-	filter: BetFilter | null = null,
-	type: BetType | null = null,
-	page: number,
-	limit: number
-): Promise<BetSchema.BetPaginatedResponse> => {
+const getBets = async (userId: string | null = null, payload: BetSchema.GetBetsPayload, page: number, limit: number): Promise<BetSchema.BetPaginatedResponse> => {
+	const { eventId, type, status, filter, token, chain } = payload;
 	if (!eventId && !userId) throw new ErrorUtil.HttpException(400, "EventId or UserId is required.");
 
-	const bets = db.sql`SELECT *
-                      FROM "event".bet
-                      WHERE true
-                          ${eventId ? db.sql`AND event_id = ${eventId}` : db.sql``} ${userId ? db.sql`AND user_id = ${userId}` : db.sql``} ${type ? db.sql`AND type = ${type}` : db.sql``} ${status === "live" ? db.sql`AND profit IS NULL` : status === "closed" ? db.sql`AND profit IS NOT NULL` : db.sql``} ${filter === "day" ? db.sql`AND created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? db.sql`AND created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? db.sql`AND created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? db.sql`AND created_at > NOW() - INTERVAL '1 year'` : db.sql``}
+	const bets = db.sql`SELECT b.*
+                      FROM "event".bet b ${token || chain ? db.sql`JOIN "event".event e ON b.event_id = e.id` : db.sql``}
+                      WHERE true ${eventId ? db.sql`AND b.event_id = ${eventId}` : db.sql``} ${userId ? db.sql`AND b.user_id = ${userId}` : db.sql``} ${type ? db.sql`AND b.type = ${type}` : db.sql``} ${status === "live" ? db.sql`AND b.profit IS NULL` : status === "closed" ? db.sql`AND b.profit IS NOT NULL` : db.sql``} ${filter === "day" ? db.sql`AND b.created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? db.sql`AND b.created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? db.sql`AND b.created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? db.sql`AND b.created_at > NOW() - INTERVAL '1 year'` : db.sql``} ${token ? db.sql`AND e.token = ${token}` : db.sql``} ${chain ? db.sql`AND e.chain = ${chain}` : db.sql``}
 
                       ORDER BY created_at DESC
                       LIMIT ${limit} OFFSET ${page * limit}`;
 	const total = db.sql`SELECT COUNT(*)
-                       FROM "event".bet
-                       WHERE true
-                           ${eventId ? db.sql`AND event_id = ${eventId}` : db.sql``} ${userId ? db.sql`AND user_id = ${userId}` : db.sql``} ${type ? db.sql`AND type = ${type}` : db.sql``} ${status === "live" ? db.sql`AND profit IS NULL` : status === "closed" ? db.sql`AND profit IS NOT NULL` : db.sql``} ${filter === "day" ? db.sql`AND created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? db.sql`AND created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? db.sql`AND created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? db.sql`AND created_at > NOW() - INTERVAL '1 year'` : db.sql``}` as Promise<
+                       FROM "event".bet b ${token || chain ? db.sql`JOIN "event".event e ON b.event_id = e.id` : db.sql``}
+                       WHERE true ${eventId ? db.sql`AND b.event_id = ${eventId}` : db.sql``} ${userId ? db.sql`AND b.user_id = ${userId}` : db.sql``} ${type ? db.sql`AND b.type = ${type}` : db.sql``} ${status === "live" ? db.sql`AND b.profit IS NULL` : status === "closed" ? db.sql`AND b.profit IS NOT NULL` : db.sql``} ${filter === "day" ? db.sql`AND b.created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? db.sql`AND b.created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? db.sql`AND b.created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? db.sql`AND b.created_at > NOW() - INTERVAL '1 year'` : db.sql``} ${token ? db.sql`AND e.token = ${token}` : db.sql``} ${chain ? db.sql`AND e.chain = ${chain}` : db.sql``}` as Promise<
 		[
 			{
 				count: string;
@@ -785,7 +772,7 @@ const matchOrder = async (betId: string, eventId: string): Promise<void> => {
 		const bet = await getBet(sql, betId);
 		const { optionId, unmatchedQuantity, type, pricePerQuantity } = bet;
 		const event = await getEvent(sql, eventId);
-		if (event.status === "completed") {
+		if (event.status === "completed" || bet.unmatchedQuantity === 0) {
 			await removeBetFromQueue(sql, betId);
 			return;
 		}

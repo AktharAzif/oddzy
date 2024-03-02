@@ -1,6 +1,7 @@
 import { builder } from "../../config";
 import { BetService, UserService } from "../../service";
-import { PlaceBetPayload } from "./input.ts";
+import { WalletSchema } from "../index.ts";
+import { GetBetsPayload, PlaceBetPayload } from "./input.ts";
 import { Bet, BetFilterEnum, BetPaginatedResponse, BetStatusEnum, BetTypeEnum } from "./object.ts";
 
 builder.mutationField("placeBet", (t) =>
@@ -58,12 +59,20 @@ builder.queryField("bets", (t) =>
 			type: t.arg({
 				type: BetTypeEnum,
 				description: "The type of the bet. It can be either buy or sell"
+			}),
+			token: t.arg({
+				type: WalletSchema.TokenEnum,
+				description: "The token of the bet"
+			}),
+			chain: t.arg({
+				type: WalletSchema.ChainEnum,
+				description: "The chain of the bet"
 			})
 		},
-		resolve: async (_, { eventId, page, limit, status, filter, type }, { user, admin }) => {
-			if (!admin && eventId) throw new Error("You are only authorized to access your bets");
+		resolve: async (_, { page, limit, ...args }, { user, admin }) => {
+			if (!admin && args.eventId) throw new Error("You are only authorized to access your bets");
 			const userId = user && user.id;
-			return await BetService.getBets(eventId, userId, status, filter, type, page - 1, limit);
+			return await BetService.getBets(userId, args, page - 1, limit);
 		},
 		description: "Get all bets filtered by user, event, status, filter and type. Either userId or eventId is required"
 	})
@@ -87,4 +96,4 @@ builder.mutationField("cancelBet", (t) =>
 	})
 );
 
-export { PlaceBetPayload, BetPaginatedResponse };
+export { PlaceBetPayload, BetPaginatedResponse, GetBetsPayload };

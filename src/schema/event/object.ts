@@ -199,7 +199,7 @@ Event.implement({
 			authScopes: (_, __, { user }) => (user && user.access) || { admin: true },
 			resolve: async (parent, { page, limit }, { user }) => {
 				const userId = user && user.id;
-				return await BetService.getBets(parent.id, userId, null, null, null, page - 1, limit);
+				return await BetService.getBets(userId, { eventId: parent.id }, page - 1, limit);
 			},
 			description: "Get all the bets for the logged in user or for all users if the user is admin"
 		}),
