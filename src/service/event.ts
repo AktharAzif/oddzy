@@ -242,6 +242,8 @@ const createEvent = async (
 > => {
 	const { option, source, category, ...event } = payload;
 
+	console.log(payload);
+
 	const id = createId();
 
 	//Fetching category done in parallel because it's not dependent on the event creation.
@@ -280,9 +282,11 @@ const createEvent = async (
 				sources: z.array(Source).parse(sourceRes)
 			};
 		}),
-		db.sql`SELECT *
-           FROM "event".category
-           WHERE id IN (${category});`
+		category.length
+			? db.sql`SELECT *
+               FROM "event".category
+               WHERE id IN (${category})`
+			: []
 	]);
 
 	return {
@@ -579,7 +583,8 @@ const getEvents = async (payload: EventSchema.getEventsPayload, page: number, li
           ${search ? db.sql`AND name ILIKE ${`%${search}%`} OR description ILIKE ${`%${search}%`}` : db.sql``}
           ${token ? db.sql`AND token = ${token}` : db.sql``}
           ${chain ? db.sql`AND chain = ${chain}` : db.sql``}
-      OFFSET ${page * limit} LIMIT ${limit};`;
+      OFFSET ${page * limit} LIMIT ${limit}
+      ORDER BY start_at DESC;`;
 	const total = db.sql`
       SELECT COUNT(*)
       FROM "event".event ${startAt || endAt || category || status || search || token || chain ? db.sql`WHERE true` : db.sql``} ${startAt ? db.sql`AND start_at >= ${startAt}` : db.sql``} ${endAt ? db.sql`AND end_at <= ${endAt}` : db.sql``}
