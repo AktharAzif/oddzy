@@ -583,8 +583,9 @@ const getEvents = async (payload: EventSchema.getEventsPayload, page: number, li
           ${search ? db.sql`AND name ILIKE ${`%${search}%`} OR description ILIKE ${`%${search}%`}` : db.sql``}
           ${token ? db.sql`AND token = ${token}` : db.sql``}
           ${chain ? db.sql`AND chain = ${chain}` : db.sql``}
+      ORDER BY start_at DESC
       OFFSET ${page * limit} LIMIT ${limit}
-      ORDER BY start_at DESC;`;
+	`;
 	const total = db.sql`
       SELECT COUNT(*)
       FROM "event".event ${startAt || endAt || category || status || search || token || chain ? db.sql`WHERE true` : db.sql``} ${startAt ? db.sql`AND start_at >= ${startAt}` : db.sql``} ${endAt ? db.sql`AND end_at <= ${endAt}` : db.sql``}
