@@ -878,7 +878,6 @@ const matchOrder = async (betId: string, eventId: string): Promise<void> => {
 
 /**
  * Flag to prevent concurrent execution of the match queue.
- * @type {boolean}
  */
 let runMatchQueueRunning = false;
 
@@ -1096,7 +1095,7 @@ const placeCounterLiquidityBet = async (sql: TransactionSql, bet: Bet, event: Ev
  *
  * @returns {Promise<void>} Returns a promise that resolves when the bet has been matched with the liquidity engine.
  */
-const matchWithLiquidityEngine = async (bet: Bet) => {
+const matchWithLiquidityEngine = async (bet: Bet): Promise<void> => {
 	const { selectedOption, otherOption } = await validateOption(bet.eventId, bet.optionId);
 
 	await db.sql.begin(async (sql) => {
@@ -1167,209 +1166,310 @@ const liquidityEngine = async (): Promise<void> => {
  */
 setInterval(liquidityEngine, 20 * 1000);
 
-//
-// const cancelBets = async (sql: TransactionSql, event: Event, bets: Bet[]) => {
-// 	if (!bets.length) return;
-//
-// 	const txSqlPayload: Transaction[] = [];
-//
-// 	//[id, soldQuantityReturn, rewardAmountUsed, updatedAt]
-// 	const updateBuyBetSqlPayload: [string, number, number, Date][] = [];
-//
-// 	// [id, quantity, unmatchedQuantity, rewardAmountUsed, profit, platformCommission, updatedAt]
-// 	const updateBetSqlPayload: [string, number, number, number, number | null, number | null, Date][] = [];
-//
-// 	for (const bet of bets) {
-// 		const { txSqlPayload: _txSqlPayload, updateBuyBetSqlPayload: _updateBuyBetSqlPayload, updateBetSqlPayload: _updateBetSqlPayload } = getCancelBetSqlPayload(bet, event, bet.unmatchedQuantity);
-//
-// 		_txSqlPayload && txSqlPayload.push(_txSqlPayload);
-//
-// 		if (_updateBuyBetSqlPayload) {
-// 			const { id, soldQuantityReturn, rewardAmountReturn, updatedAt } = _updateBuyBetSqlPayload;
-// 			updateBuyBetSqlPayload.push([id, soldQuantityReturn, rewardAmountReturn, updatedAt]);
-// 		}
-//
-// 		const { id, quantity, unmatchedQuantity, rewardAmountUsed, profit, platformCommission, updatedAt } = _updateBetSqlPayload;
-// 		updateBetSqlPayload.push([id, quantity, unmatchedQuantity, rewardAmountUsed, profit, platformCommission, updatedAt]);
-// 	}
-//
-// 	txSqlPayload.length && (await sql`INSERT INTO "wallet".transaction ${sql(txSqlPayload)}`);
-//
-// 	//noinspection SqlResolve
-// 	updateBuyBetSqlPayload.length &&
-// 		(await sql`
-//       UPDATE "event".bet
-//       SET sold_quantity      = sold_quantity - (update_data.sold_quantity_return)::int,
-//           reward_amount_used = reward_amount_used + (update_data.reward_amount_return)::decimal,
-//           updated_at         = update_data.updated_at
-//       FROM (VALUES ${
-// 				//@ts-ignore
-// 				sql(updateBuyBetSqlPayload)
-// 			}) AS update_data (id, sold_quantity_return, reward_amount_return, updated_at)
-//       WHERE "event".bet.id = update_data.id
-// 	`);
-//
-// 	//noinspection SqlResolve
-// 	await sql`UPDATE "event".bet
-//             SET unmatched_quantity  = (update_data.unmatched_quantity)::int,
-//                 quantity            = (update_data.quantity)::int,
-//                 reward_amount_used  = (update_data.reward_amount_used)::decimal,
-//                 profit              = (update_data.profit)::decimal,
-//                 platform_commission = (update_data.platform_commission)::decimal,
-//                 updated_at          = update_data.updated_at
-//             FROM (VALUES ${
-// 							//@ts-ignore
-// 							sql(updateBetSqlPayload)
-// 						}) AS update_data (id, quantity, unmatched_quantity, reward_amount_used, profit, platform_commission,
-//                                updated_at)
-//             WHERE "event".bet.id = update_data.id`;
-// };
-//
-// const cancelAllRemainingBets = async (sql: TransactionSql, event: Event) => {
-// 	const sellBets = z.array(Bet).parse(
-// 		await db.sql`
-//         SELECT *
-//         FROM "event".bet
-//         WHERE event_id = ${event.id}
-//           AND type = 'sell'
-//           AND unmatched_quantity > 0
-// 		`
-// 	);
-//
-// 	await cancelBets(sql, event, sellBets);
-//
-// 	const buyBets = z.array(Bet).parse(
-// 		await db.sql`
-//         SELECT *
-//         FROM "event".bet
-//         WHERE event_id = ${event.id}
-//           AND type = 'buy'
-//           AND unmatched_quantity > 0
-// 		`
-// 	);
-//
-// 	await cancelBets(sql, event, buyBets);
-// };
-//
-// const getBetWinningPayoutTxSqlPayload = (event: Event, bet: Bet) => {
-// 	//Only buy bets will win an event. So soldQuantity will always be a number because it's a buy bet. So, casting it as number
-// 	const quantity = bet.quantity - (bet.soldQuantity as number);
-//
-// 	const { profit, platformCommission, amount: _amount } = getProfitAndCommission(quantity, bet.pricePerQuantity, event.winPrice, event.platformFeesPercentage);
-//
-// 	const amount = _amount - bet.rewardAmountUsed;
-//
-// 	console.log("profit", profit, "platformCommission", platformCommission, "amount", amount, "quantity", quantity);
-//
-// 	const updateBetPayload = {
-// 		id: bet.id,
-// 		profit,
-// 		platformCommission,
-// 		updatedAt: new Date()
-// 	};
-//
-// 	const txPayload = generateTxSqlPayload(bet.userId as string, "bet_win", amount, bet.rewardAmountUsed, event.token, event.chain, null, "completed", bet.id, quantity);
-//
-// 	console.log(txPayload);
-//
-// 	return {
-// 		updateBetPayload,
-// 		txPayload
-// 	};
-// };
-//
-// const resolveEvent = async (eventId: string) => {
-// 	await db.sql.begin(async (sql) => {
-// 		await sql`SELECT pg_advisory_xact_lock(hashtext(${eventId}))`;
-// 		const event = await getEvent(sql, eventId);
-//
-// 		await cancelAllRemainingBets(sql, event);
-//
-// 		if (!event.optionWon || event.resolved) return;
-//
-// 		await sql`UPDATE "event".bet
-//               SET profit              = -(bet.price_per_quantity * bet.quantity),
-//                   platform_commission = 0
-//               WHERE type = 'buy'
-//                 AND option_id <> ${event.optionWon}
-//                 AND user_id IS NOT NULL`;
-//
-// 		const bets = z.array(Bet).parse(
-// 			await db.sql`
-//           SELECT *
-//           FROM "event".bet
-//           WHERE event_id = ${eventId}
-//             AND type = 'buy'
-//             AND option_id = ${event.optionWon}
-//             AND quantity > 0
-//             AND user_id IS NOT NULL
-// 			`
-// 		);
-//
-// 		if (!bets.length) return;
-//
-// 		const txSqlPayload: Transaction[] = [];
-//
-// 		//[id, profit, platformCommission, updatedAt]
-// 		const updateBetSqlPayload: [string, number, number, Date][] = [];
-//
-// 		for (const bet of bets) {
-// 			const { updateBetPayload, txPayload } = getBetWinningPayoutTxSqlPayload(event, bet);
-// 			txSqlPayload.push(txPayload);
-// 			const { id, profit, platformCommission, updatedAt } = updateBetPayload;
-// 			updateBetSqlPayload.push([id, profit, platformCommission, updatedAt]);
-// 		}
-//
-// 		//noinspection SqlResolve
-// 		updateBetSqlPayload.length &&
-// 			(await sql`
-//         UPDATE "event".bet
-//         SET profit              = (update_data.profit)::decimal,
-//             platform_commission = (update_data.platform_commission)::decimal,
-//             updated_at          = update_data.updated_at
-//         FROM (VALUES ${
-// 					//@ts-ignore
-// 					sql(updateBetSqlPayload)
-// 				}) AS update_data (id, profit, platform_commission, updated_at)
-//         WHERE "event".bet.id = update_data.id
-// 		`);
-//
-// 		txSqlPayload.length && (await sql`INSERT INTO "wallet".transaction ${sql(txSqlPayload)}`);
-//
-// 		await sql`UPDATE "event".event
-//               SET resolved    = true,
-//                   resolved_at = NOW()
-//               WHERE id = ${eventId}`;
-// 	});
-// };
-//
-// let initEventPayoutRunning = false;
-// const initEventPayout = async () => {
-// 	try {
-// 		if (initEventPayoutRunning) return;
-//
-// 		const events = z.array(Event).parse(
-// 			await db.sql`
-//           SELECT *
-//           FROM "event".event
-//           WHERE status = 'completed'
-//             AND resolved = false
-// 			`
-// 		);
-//
-// 		for (const event of events) {
-// 			await resolveEvent(event.id);
-// 		}
-//
-// 		initEventPayoutRunning = true;
-//
-// 		initEventPayoutRunning = false;
-// 	} catch (e) {
-// 		console.error("Error updating event status", e);
-// 		initEventPayoutRunning = false;
-// 	}
-// };
-//
-// setInterval(initEventPayout, 5 * 1000);
-//
+/**
+ * This function cancels unmatched quantity of given bets.
+ *
+ * @param {TransactionSql} sql - The SQL transaction object.
+ * @param {Event} event - The event object related to the bets.
+ * @param {Bet[]} bets - An array of Bet objects to be cancelled.
+ *
+ * The function performs the following steps:
+ * 1. Checks if the bets array is empty. If so, it returns immediately.
+ * 2. Initializes empty arrays for storing SQL payloads for transactions and bet updates.
+ * 3. Iterates over each bet in the bets array. For each bet, it generates SQL payloads for transactions and bet updates.
+ * 4. If there are any transactions, it inserts them into the database.
+ * 5. If there are any bet updates, it updates the bets in the database.
+ *
+ * @returns {Promise<void>} Returns a promise that resolves when all bets have been cancelled.
+ */
+const cancelBets = async (sql: TransactionSql, event: Event, bets: Bet[]): Promise<void> => {
+	if (!bets.length) return;
+
+	const txSqlPayload: Transaction[] = [];
+
+	//[id, soldQuantityReturn, rewardAmountUsed, updatedAt]
+	const updateBuyBetSqlPayload: [string, number, number, Date][] = [];
+
+	// [id, quantity, unmatchedQuantity, rewardAmountUsed, profit, platformCommission, updatedAt]
+	const updateBetSqlPayload: [string, number, number, number, number | null, number | null, Date][] = [];
+
+	for (const bet of bets) {
+		const { txSqlPayload: _txSqlPayload, updateBuyBetSqlPayload: _updateBuyBetSqlPayload, updateBetSqlPayload: _updateBetSqlPayload } = getCancelBetSqlPayload(bet, event, bet.unmatchedQuantity);
+
+		_txSqlPayload && txSqlPayload.push(_txSqlPayload);
+
+		if (_updateBuyBetSqlPayload) {
+			const { id, soldQuantityReturn, rewardAmountReturn, updatedAt } = _updateBuyBetSqlPayload;
+			updateBuyBetSqlPayload.push([id, soldQuantityReturn, rewardAmountReturn, updatedAt]);
+		}
+
+		const { id, quantity, unmatchedQuantity, rewardAmountUsed, profit, platformCommission, updatedAt } = _updateBetSqlPayload;
+		updateBetSqlPayload.push([id, quantity, unmatchedQuantity, rewardAmountUsed, profit, platformCommission, updatedAt]);
+	}
+
+	txSqlPayload.length && (await sql`INSERT INTO "wallet".transaction ${sql(txSqlPayload)}`);
+
+	//noinspection SqlResolve
+	updateBuyBetSqlPayload.length &&
+		(await sql`
+      UPDATE "event".bet
+      SET sold_quantity      = sold_quantity - (update_data.sold_quantity_return)::int,
+          reward_amount_used = reward_amount_used + (update_data.reward_amount_return)::decimal,
+          updated_at         = update_data.updated_at
+      FROM (VALUES ${
+				//@ts-ignore
+				sql(updateBuyBetSqlPayload)
+			}) AS update_data (id, sold_quantity_return, reward_amount_return, updated_at)
+      WHERE "event".bet.id = update_data.id
+      RETURNING *`);
+
+	//noinspection SqlResolve
+	await sql`UPDATE "event".bet
+            SET unmatched_quantity  = (update_data.unmatched_quantity)::int,
+                quantity            = (update_data.quantity)::int,
+                reward_amount_used  = (update_data.reward_amount_used)::decimal,
+                profit              = (update_data.profit)::decimal,
+                platform_commission = (update_data.platform_commission)::decimal,
+                updated_at          = update_data.updated_at
+            FROM (VALUES ${
+							//@ts-ignore
+							sql(updateBetSqlPayload)
+						}) AS update_data (id, quantity, unmatched_quantity, reward_amount_used, profit, platform_commission,
+                               updated_at)
+            WHERE "event".bet.id = update_data.id`;
+};
+
+/**
+ * This function cancels all remaining bets for a given event.
+ *
+ * @param {TransactionSql} sql - The SQL transaction object.
+ * @param {Event} event - The event object related to the bets.
+ *
+ * The function performs the following steps:
+ * 1. Retrieves all sell bets for the event that have unmatched quantity.
+ * 2. Cancels each retrieved sell bet.
+ * 3. Retrieves all buy bets for the event that have unmatched quantity.
+ * 4. Cancels each retrieved buy bet.
+ *
+ * @returns {Promise<void>} Returns a promise that resolves when all remaining bets for the event have been cancelled.
+ *
+ * It is important to cancel sell bets first because that will update the sold quantity of the buy bets. So it's easier split the logic into two steps
+ */
+const cancelAllRemainingBets = async (sql: TransactionSql, event: Event): Promise<void> => {
+	const sellBets = z.array(Bet).parse(
+		await sql`
+        SELECT *
+        FROM "event".bet
+        WHERE event_id = ${event.id}
+          AND type = 'sell'
+          AND unmatched_quantity > 0
+		`
+	);
+
+	await cancelBets(sql, event, sellBets);
+
+	const buyBets = z.array(Bet).parse(
+		await sql`
+        SELECT *
+        FROM "event".bet
+        WHERE event_id = ${event.id}
+          AND type = 'buy'
+          AND unmatched_quantity > 0
+		`
+	);
+
+	await cancelBets(sql, event, buyBets);
+};
+
+/**
+ * This function generates the payload for a winning bet payout transaction.
+ *
+ * @param {Event} event - The event object related to the bet.
+ * @param {Bet} bet - The bet object for which the payout is being calculated.
+ *
+ * The function performs the following steps:
+ * 1. Calculates the quantity of the bet that has won. This is the total quantity of the bet minus the quantity that has been sold.
+ * 2. Calculates the profit, platform commission, and amount for the bet using the getProfitAndCommission function.
+ * 3. Adjusts the amount by subtracting the reward amount used.
+ * 4. Generates an object containing the details for updating the bet in the database.
+ * 5. Generates a transaction payload for the payout transaction using the generateTxSqlPayload function.
+ *
+ * @returns {Object} Returns an object containing the update bet payload and the transaction payload.
+ * The update bet payload is an object containing the details for updating the bet in the database.
+ * The transaction payload is an object containing the details for the payout transaction.
+ */
+const getBetWinningPayoutTxSqlPayload = (
+	event: Event,
+	bet: Bet
+): {
+	updateBetPayload: {
+		id: string;
+		profit: number;
+		platformCommission: number;
+		updatedAt: Date;
+	};
+	txPayload: Transaction;
+} => {
+	//Only buy bets will win an event. So soldQuantity will always be a number because it's a buy bet. So, casting it as number
+	const quantity = bet.quantity - (bet.soldQuantity as number);
+
+	const { profit, platformCommission, amount: _amount } = getProfitAndCommission(quantity, bet.pricePerQuantity, event.winPrice, event.platformFeesPercentage);
+
+	const amount = _amount - bet.rewardAmountUsed;
+
+	const updateBetPayload = {
+		id: bet.id,
+		profit,
+		platformCommission,
+		updatedAt: new Date()
+	};
+
+	const txPayload = generateTxSqlPayload(bet.userId as string, "bet_win", amount, bet.rewardAmountUsed, event.token, event.chain, null, "completed", bet.id, quantity);
+
+	return {
+		updateBetPayload,
+		txPayload
+	};
+};
+/**
+ * This function resolves an event.
+ *
+ * @param {string} eventId - The ID of the event to be resolved.
+ *
+ * The function performs the following steps:
+ * 1. Begins a SQL transaction and locks the event to prevent concurrent modifications.
+ * 2. Retrieves the event details from the database.
+ * 3. Cancels all remaining bets for the event.
+ * 4. If the event does not have a winning option or is already resolved, it returns immediately.
+ * 5. Updates all buy bets for the event that did not select the winning option, setting their profit to negative and their platform commission to zero.
+ * 6. Updates all buy bets with all quantity sold by setting their profit and platform commission to zero.
+ * 7. Retrieves all buy bets for the event that selected the winning option and the quantity - sold quantity is greater than 0.
+ * 8. If there are no such bets, it returns immediately.
+ * 9. For each retrieved bet, it generates a payout transaction SQL payload and a bet update SQL payload.
+ * 10. If there are any transactions, it inserts them into the database.
+ * 11. If there are any bet updates, it updates the bets in the database.
+ * 12. Updates the event to mark it as resolved.
+ *
+ * @returns {Promise<void>} Returns a promise that resolves when the event has been resolved.
+ */
+const resolveEvent = async (eventId: string): Promise<void> => {
+	await db.sql.begin(async (sql) => {
+		await sql`SELECT pg_advisory_xact_lock(hashtext(${eventId}))`;
+		const event = await getEvent(sql, eventId);
+
+		await cancelAllRemainingBets(sql, event);
+
+		if (!event.optionWon || event.resolved) return;
+
+		await sql`UPDATE "event".bet
+              SET profit              = -(bet.price_per_quantity * bet.quantity),
+                  platform_commission = 0
+              WHERE type = 'buy'
+                AND option_id <> ${event.optionWon}
+                AND user_id IS NOT NULL`;
+
+		await sql`UPDATE "event".bet
+              SET profit              = 0,
+                  platform_commission = 0
+              WHERE type = 'buy'
+                AND event_id = ${eventId}
+                AND user_id IS NOT NULL
+                AND quantity - sold_quantity = 0`;
+
+		const bets = z.array(Bet).parse(
+			await sql`
+          SELECT *
+          FROM "event".bet
+          WHERE event_id = ${eventId}
+            AND type = 'buy'
+            AND option_id = ${event.optionWon}
+            AND quantity - bet.sold_quantity > 0
+            AND user_id IS NOT NULL
+			`
+		);
+
+		if (!bets.length) return;
+
+		const txSqlPayload: Transaction[] = [];
+
+		//[id, profit, platformCommission, updatedAt]
+		const updateBetSqlPayload: [string, number, number, Date][] = [];
+
+		for (const bet of bets) {
+			const { updateBetPayload, txPayload } = getBetWinningPayoutTxSqlPayload(event, bet);
+			txSqlPayload.push(txPayload);
+			const { id, profit, platformCommission, updatedAt } = updateBetPayload;
+			updateBetSqlPayload.push([id, profit, platformCommission, updatedAt]);
+		}
+
+		//noinspection SqlResolve
+		updateBetSqlPayload.length &&
+			(await sql`
+        UPDATE "event".bet
+        SET profit              = (update_data.profit)::decimal,
+            platform_commission = (update_data.platform_commission)::decimal,
+            updated_at          = update_data.updated_at
+        FROM (VALUES ${
+					//@ts-ignore
+					sql(updateBetSqlPayload)
+				}) AS update_data (id, profit, platform_commission, updated_at)
+        WHERE "event".bet.id = update_data.id
+		`);
+
+		txSqlPayload.length && (await sql`INSERT INTO "wallet".transaction ${sql(txSqlPayload)}`);
+
+		await sql`UPDATE "event".event
+              SET resolved    = true,
+                  resolved_at = NOW()
+              WHERE id = ${eventId}`;
+	});
+};
+
+/**
+ * Flag to prevent concurrent execution of the event payout initialization.
+ */
+let initEventPayoutRunning = false;
+
+/**
+ * This function initializes the payout for all completed but unresolved events.
+ *
+ * The function performs the following steps:
+ * 1. Checks if the event payout initialization is already running. If so, it returns immediately.
+ * 2. Retrieves all events from the database that are completed but not yet resolved.
+ * 3. Iterates over each event and calls the resolveEvent function to resolve the event.
+ * 4. Sets the flag to indicate that the event payout initialization is running.
+ * 5. Resets the flag to indicate that the event payout initialization is not running.
+ *
+ * If an error occurs during the execution of the function, it logs the error and resets the flag.
+ *
+ * @returns {Promise<void>} Returns a promise that resolves when the event payout initialization has been run.
+ */
+const initEventPayout = async (): Promise<void> => {
+	try {
+		if (initEventPayoutRunning) return;
+
+		const events = z.array(Event).parse(
+			await db.sql`
+          SELECT *
+          FROM "event".event
+          WHERE status = 'completed'
+            AND resolved = false
+			`
+		);
+
+		for (const event of events) {
+			await resolveEvent(event.id);
+		}
+
+		initEventPayoutRunning = true;
+
+		initEventPayoutRunning = false;
+	} catch (e) {
+		console.error("Error updating event status", e);
+		initEventPayoutRunning = false;
+	}
+};
+
+setInterval(initEventPayout, 5 * 1000);
+
 export { Bet, BetType, BetStatus, BetFilter, placeBet, getBets, cancelBet, isTop5Bet };
