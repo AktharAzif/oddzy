@@ -242,8 +242,6 @@ const createEvent = async (
 > => {
 	const { option, source, category, ...event } = payload;
 
-	console.log(payload);
-
 	const id = createId();
 
 	//Fetching category done in parallel because it's not dependent on the event creation.
