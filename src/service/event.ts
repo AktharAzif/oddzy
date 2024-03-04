@@ -108,6 +108,24 @@ const getOption = async (id: number): Promise<Option> => {
 };
 
 /**
+ * This function retrieves an event from the database using the ID of a bet.
+ *
+ * @async
+ * @function getEventByBetId
+ * @param {string} betId - The ID of the bet whose associated event is to be retrieved.
+ * @returns {Promise<Event>} - Returns a promise that resolves to an Event object if found, otherwise it throws an HttpException with status 404.
+ * @throws {ErrorUtil.HttpException} - Throws an HttpException if the event is not found.
+ */
+const getEventByBetId = async (betId: string): Promise<Event> => {
+	const res = await db.sql`SELECT e.*
+                           FROM "event".event AS e
+                                    JOIN "event".bet AS b ON e.id = b.event_id
+                           WHERE b.id = ${betId};`;
+	if (!res.length) throw new ErrorUtil.HttpException(404, "Event not found");
+	return Event.parse(res[0]);
+};
+
+/**
  * This function creates or updates a category in the database.
  * If the payload contains an ID, it updates the category with the given ID.
  * If the payload does not contain an ID, it creates a new category.
@@ -672,5 +690,6 @@ export {
 	getSource,
 	updateEvent,
 	updateEventCategories,
-	getOption
+	getOption,
+	getEventByBetId
 };

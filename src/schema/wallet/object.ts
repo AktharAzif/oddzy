@@ -1,6 +1,6 @@
 import { builder } from "../../config";
-import { UserService, WalletService } from "../../service";
-import { UserSchema } from "../index.ts";
+import { EventService, UserService, WalletService } from "../../service";
+import { EventSchema, UserSchema } from "../index.ts";
 
 const TokenEnum = builder.enumType("TokenEnum", {
 	values: WalletService.Token.options
@@ -134,6 +134,11 @@ Transaction.implement({
 		betId: t.exposeString("betId", {
 			nullable: true,
 			description: "The unique identifier of the bet associated with the transaction."
+		}),
+		event: t.field({
+			type: EventSchema.Event,
+			resolve: async (parent) => (parent.betId ? await EventService.getEventByBetId(parent.betId) : null),
+			nullable: true
 		}),
 		betQuantity: t.exposeFloat("betQuantity", {
 			nullable: true,
