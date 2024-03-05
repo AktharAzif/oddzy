@@ -581,11 +581,9 @@ const isTop5Bet = async (sql: TransactionSql | Sql, eventId: string, betId: stri
 
 	if (!bet) throw new ErrorUtil.HttpException(400, "Invalid bet id.");
 
-	if (check) return false;
+	if (check) return bet.rowNumber <= 5 && bet.unmatchedQuantity > 0;
 
-	// if (check) return bet.rowNumber <= 5 && bet.unmatchedQuantity > 0;
-	//
-	// if (bet.rowNumber <= 5 && bet.unmatchedQuantity > 0) throw new ErrorUtil.HttpException(400, "Cannot cancel, bet is in priority queue.");
+	if (bet.rowNumber <= 5 && bet.unmatchedQuantity > 0) throw new ErrorUtil.HttpException(400, "Cannot cancel, bet is in priority queue.");
 	return bet;
 };
 
