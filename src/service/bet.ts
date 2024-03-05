@@ -984,9 +984,9 @@ const getLiquidityMatchableBets = async (): Promise<Array<Bet>> =>
                        bet.price_per_quantity >= event.win_price * event.max_liquidity_percentage / 100))
                   OR (event.liquidity_in_between = true AND
                       bet.price_per_quantity BETWEEN event.win_price * event.min_liquidity_percentage / 100 AND event.win_price * event.max_liquidity_percentage / 100))) as bets
-        WHERE row_number > 5
         ORDER BY row_number`
 	);
+// WHERE row_number > 5
 
 /**
  * This function places a counter liquidity bet for a given bet and event.
