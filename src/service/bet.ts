@@ -1389,8 +1389,6 @@ const resolveEvent = async (eventId: string): Promise<void> => {
 			`
 		);
 
-		if (!bets.length) return;
-
 		const txSqlPayload: Transaction[] = [];
 
 		//[id, profit, platformCommission, updatedAt]
