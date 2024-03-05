@@ -1472,4 +1472,4 @@ const initEventPayout = async (): Promise<void> => {
 
 setInterval(initEventPayout, 5 * 1000);
 
-export { Bet, BetType, BetStatus, BetFilter, placeBet, getBets, cancelBet, isTop5Bet };
+export { Bet, BetType, BetStatus, BetFilter, placeBet, getBets, cancelBet, isTop5Bet, getBet };

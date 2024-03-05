@@ -17,7 +17,9 @@ const BetFilterEnum = builder.enumType("BetFilterEnum", {
 	description: "The filter to be applied to the bets based on time. It can be either day, week, month, year or all"
 });
 
-const Bet = builder.objectRef<BetService.Bet>("Bet").implement({
+const Bet = builder.objectRef<BetService.Bet>("Bet");
+
+Bet.implement({
 	fields: (t) => ({
 		id: t.exposeString("id", {
 			description: "The unique identifier of the bet"
@@ -66,6 +68,12 @@ const Bet = builder.objectRef<BetService.Bet>("Bet").implement({
 		buyBetId: t.exposeString("buyBetId", {
 			nullable: true,
 			description: "Buy bet id for sell bet. Must be present if the bet is a sell bet"
+		}),
+		buyBet: t.field({
+			type: Bet,
+			resolve: async (parent) => (parent.buyBetId ? await BetService.getBet(db.sql, parent.buyBetId) : null),
+			description: "The buy bet for the sell bet. Will be null for buy bet",
+			nullable: true
 		}),
 		profit: t.exposeFloat("profit", { nullable: true, description: "Profit earned from the bet" }),
 		platformCommission: t.exposeFloat("platformCommission", {
