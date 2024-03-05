@@ -1366,7 +1366,8 @@ const resolveEvent = async (eventId: string): Promise<void> => {
                   platform_commission = 0
               WHERE type = 'buy'
                 AND option_id <> ${event.optionWon}
-                AND user_id IS NOT NULL`;
+                AND user_id IS NOT NULL
+                AND event_id = ${eventId}`;
 
 		await sql`UPDATE "event".bet
               SET profit              = 0,
