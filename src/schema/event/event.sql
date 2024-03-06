@@ -131,6 +131,9 @@ CREATE TABLE
 ALTER TABLE "wallet".transaction
     ADD FOREIGN KEY ("bet_id") REFERENCES "event".bet (id);
 
+ALTER TABLE "user".notification
+    ADD FOREIGN KEY ("bet_id") REFERENCES "event".bet (id);
+
 CREATE TABLE
     IF NOT EXISTS "event".matched
 (

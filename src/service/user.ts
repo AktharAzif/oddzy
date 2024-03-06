@@ -4,6 +4,7 @@ import { getMessaging } from "firebase-admin/messaging";
 import * as jose from "jose";
 import { TwitterApi } from "twitter-api-v2";
 import { z } from "zod";
+import { BetService, EventService } from ".";
 import { db } from "../config";
 import { UserSchema } from "../schema";
 import { ErrorUtil } from "../util";
@@ -22,6 +23,9 @@ const twitterClient = new TwitterApi({
 	clientId: TWITTER_CLIENT_ID,
 	clientSecret: TWITTER_CLIENT_SECRET
 });
+
+const NotificationType = z.enum(["bet", "bet_win", "bet_cancel", "bet_exit", "point"]);
+type NotificationType = z.infer<typeof NotificationType>;
 
 const SocialPlatform = z.enum(["twitter", "discord"]);
 type SocialPlatform = z.infer<typeof SocialPlatform>;
@@ -590,6 +594,54 @@ const addFcmToken = async (userId: string, token: string) => {
 	}
 };
 
+const sendNotification = async (
+	userId: string,
+	type: NotificationType,
+	data: {
+		event?: EventService.Event;
+		option?: EventService.Option;
+		bet?: BetService.Bet;
+		betQuantity?: number;
+	}
+) => {
+	let notificationSqlPayload: {
+		id: string;
+		userId: string;
+		title: string;
+		message: string;
+		type: NotificationType;
+		betId?: string;
+	};
+
+	if (type.includes("bet")) {
+		const { event, option, betQuantity, bet } = data;
+		if (!event || !betQuantity || !option || !bet) throw new Error("Event, bet quantity, bet, and option are required for bet notifications");
+
+		const title = type === "bet" ? "New Bet" : type === "bet_win" ? "Bet Win" : type === "bet_cancel" ? "Bet Cancel" : "Bet Exit";
+
+		const message =
+			type === "bet"
+				? `You placed a bet of ${betQuantity} quantities on ${option.name} option for ${event.name}`
+				: type === "bet_win"
+					? `You won a bet of ${betQuantity} quantities on ${option.name} option for ${event.name}`
+					: type === "bet_cancel"
+						? `You cancelled a bet of ${betQuantity} quantities on ${option.name} option for ${event.name}`
+						: `You exited a bet of ${betQuantity} quantities on ${option.name} option for ${event.name}`;
+
+		notificationSqlPayload = {
+			id: createId(),
+			userId,
+			title,
+			message,
+			type,
+			betId: bet.id
+		};
+	}
+
+	//@ts-ignore
+	await db.sql`INSERT INTO "user".notification ${db.sql(notificationSqlPayload)}`;
+};
+
 export {
 	SocialPlatform,
 	Social,
@@ -607,5 +659,6 @@ export {
 	getAccess,
 	getReferralCodes,
 	getAllUsers,
-	addFcmToken
+	addFcmToken,
+	sendNotification
 };

@@ -2,6 +2,8 @@ CREATE SCHEMA IF NOT EXISTS "user";
 
 CREATE TYPE "user".platform AS ENUM ( 'twitter', 'discord');
 
+CREATE TYPE "user".notification_type AS ENUM ( 'bet', 'bet_cancel', 'bet_win', 'bet_exit', 'point');
+
 --TABLES
 CREATE TABLE IF NOT EXISTS "user".user
 (
@@ -46,4 +48,18 @@ CREATE TABLE IF NOT EXISTS "user".social
     "user_id"       CHAR(24)        NOT NULL REFERENCES "user".user (id),
     "created_at"    TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
     "updated_at"    TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+);
+
+
+CREATE TABLE IF NOT EXISTS "user".notification
+(
+    "id"         CHAR(24) PRIMARY KEY,
+    "user_id"    CHAR(24) REFERENCES "user".user (id),
+    "title"      TEXT                     NOT NULL,
+    "message"    TEXT                     NOT NULL,
+    "read"       BOOLEAN                  NOT NULL DEFAULT FALSE,
+    "type"       "user".notification_type NOT NULL,
+    "bet_id"     CHAR(24),
+    "created_at" TIMESTAMPTZ              NOT NULL DEFAULT NOW(),
+    "updated_at" TIMESTAMPTZ              NOT NULL DEFAULT NOW()
 );
