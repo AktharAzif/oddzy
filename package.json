@@ -22,6 +22,7 @@
     "@pothos/core": "^3.41.0",
     "@pothos/plugin-scope-auth": "^3.21.0",
     "@pothos/plugin-validation": "^3.10.1",
+    "@solana/spl-token": "^0.4.1",
     "@solana/web3.js": "^1.90.0",
     "@twitter-api-v2/plugin-token-refresher": "^1.0.0",
     "add": "^2.0.6",
