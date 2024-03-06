@@ -1,7 +1,7 @@
 import { builder } from "../../config";
 import { UserService } from "../../service";
 import { ErrorUtil } from "../../util";
-import { ReferralCode, Social, User, UserLoginResponse, UserPaginatedResponse } from "./object.ts";
+import { NotificationPaginatedResponse, ReferralCode, Social, User, UserLoginResponse, UserPaginatedResponse } from "./object.ts";
 
 builder.queryField("twitterAuthUrl", (t) =>
 	t.field({
@@ -142,4 +142,42 @@ builder.mutationField("addFcmToken", (t) =>
 	})
 );
 
-export { User, UserPaginatedResponse };
+builder.queryField("notifications", (t) =>
+	t.field({
+		type: NotificationPaginatedResponse,
+		authScopes: { user: true },
+		args: {
+			page: t.arg.int({
+				required: true,
+				defaultValue: 1,
+				validate: { min: 1 },
+				description: "The page number. Min 1."
+			}),
+			limit: t.arg.int({
+				required: true,
+				defaultValue: 20,
+				validate: { min: 1, max: 100 },
+				description: "The limit of notifications per page. Min 1, Max 100."
+			})
+		},
+		resolve: async (_, { page, limit }, { user }) => await UserService.getNotifications((user as UserService.User).id, page - 1, limit),
+		description: "Fetches the notifications of the user."
+	})
+);
+
+builder.mutationField("markNotificationAsRead", (t) =>
+	t.field({
+		authScopes: { user: true },
+		type: "Boolean",
+		args: {
+			id: t.arg.string({ required: true, description: "The id of the notification." })
+		},
+		resolve: async (_, { id }, { user }) => {
+			await UserService.markNotificationAsRead((user as UserService.User).id, id);
+			return true;
+		},
+		description: "Marks the notification as read."
+	})
+);
+
+export { User, UserPaginatedResponse, NotificationPaginatedResponse };

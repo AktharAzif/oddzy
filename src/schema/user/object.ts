@@ -1,5 +1,11 @@
-import { builder } from "../../config";
-import { UserService } from "../../service";
+import { builder, db } from "../../config";
+import { BetService, UserService } from "../../service";
+import { BetSchema } from "../index.ts";
+
+const NotificationTypeEnum = builder.enumType("NotificationTypeEnum", {
+	values: UserService.NotificationType.options,
+	description: "The type of the notification"
+});
 
 const UserLoginResponse = builder.objectRef<{ jwt: string }>("UserLoginResponse").implement({
 	fields: (t) => ({
@@ -180,4 +186,78 @@ UserPaginatedResponse.implement({
 });
 type UserPaginatedResponse = typeof UserPaginatedResponse.$inferType;
 
-export { UserLoginResponse, User, Social, ReferralCode, UserPaginatedResponse };
+const Notification = builder.objectRef<UserService.Notification>("Notification");
+
+Notification.implement({
+	fields: (t) => ({
+		id: t.exposeString("id", {
+			description: "The unique identifier of the notification."
+		}),
+		userId: t.exposeString("userId", {
+			description: "The unique identifier of the user."
+		}),
+		title: t.exposeString("title", {
+			description: "The title of the notification."
+		}),
+		message: t.exposeString("message", {
+			description: "The message of the notification."
+		}),
+		type: t.field({
+			type: NotificationTypeEnum,
+			resolve: (parent) => parent.type,
+			description: "The type of the notification."
+		}),
+		betId: t.exposeString("betId", {
+			nullable: true,
+			description: "The unique identifier of the bet."
+		}),
+		bet: t.field({
+			type: BetSchema.Bet,
+			nullable: true,
+			resolve: async (parent) => (parent.betId ? await BetService.getBet(db.sql, parent.betId) : null),
+			description: "The bet associated with the notification."
+		}),
+		createdAt: t.field({
+			type: "Date",
+			resolve: (parent) => parent.createdAt,
+			description: "The date and time when the notification was created."
+		}),
+		updatedAt: t.field({
+			authScopes: { admin: true },
+			type: "Date",
+			resolve: (parent) => parent.updatedAt,
+			description: "The date and time when the notification was last updated."
+		})
+	}),
+	description: "The notification response object."
+});
+
+const NotificationPaginatedResponse = builder.objectRef<{
+	notifications: UserService.Notification[];
+	total: number;
+	page: number;
+	limit: number;
+}>("NotificationPaginatedResponse");
+
+NotificationPaginatedResponse.implement({
+	fields: (t) => ({
+		notifications: t.field({
+			type: [Notification],
+			resolve: (parent) => parent.notifications,
+			description: "The notifications"
+		}),
+		total: t.exposeInt("total", {
+			description: "The total number of notifications"
+		}),
+		page: t.exposeInt("page", {
+			description: "Current page number"
+		}),
+		limit: t.exposeInt("limit", {
+			description: "The number of notifications per page"
+		})
+	}),
+	description: "The paginated notification response object."
+});
+type NotificationPaginatedResponse = typeof NotificationPaginatedResponse.$inferType;
+
+export { UserLoginResponse, User, Social, ReferralCode, UserPaginatedResponse, Notification, NotificationPaginatedResponse };

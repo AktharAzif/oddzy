@@ -5,6 +5,7 @@ import { db } from "../config";
 import { BetSchema } from "../schema";
 import { ErrorUtil } from "../util";
 import { Event, getEvent, getEventOptions, Option } from "./event.ts";
+import { UserService } from "./index.ts";
 import { generateTxSqlPayload, getUserTokenBalance, type Transaction } from "./wallet.ts";
 
 const BetType = z.enum(["buy", "sell"]);
@@ -376,6 +377,12 @@ const placeBet = async (userId: string, payload: BetSchema.PlaceBetPayload): Pro
 		const bet = Bet.parse((await sql`INSERT INTO "event".bet ${sql(insertBetSqlPayload)} RETURNING *`)[0]);
 		insertBetTxSqlPayload && (await sql`INSERT INTO "wallet".transaction ${sql(insertBetTxSqlPayload)}`);
 		await addToBetQueue(sql, bet);
+		await UserService.sendNotification(sql, userId, "bet", {
+			event,
+			bet,
+			option: selectedOption,
+			betQuantity: quantity
+		});
 		return bet;
 	});
 };

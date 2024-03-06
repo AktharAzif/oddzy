@@ -96,4 +96,4 @@ builder.mutationField("cancelBet", (t) =>
 	})
 );
 
-export { PlaceBetPayload, BetPaginatedResponse, GetBetsPayload };
+export { Bet, PlaceBetPayload, BetPaginatedResponse, GetBetsPayload };

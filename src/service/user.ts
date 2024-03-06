@@ -2,11 +2,13 @@ import { createId } from "@paralleldrive/cuid2";
 import { TwitterApiAutoTokenRefresher } from "@twitter-api-v2/plugin-token-refresher";
 import { getMessaging } from "firebase-admin/messaging";
 import * as jose from "jose";
+import type { TransactionSql } from "postgres";
 import { TwitterApi } from "twitter-api-v2";
 import { z } from "zod";
 import { BetService, EventService } from ".";
 import { db } from "../config";
 import { UserSchema } from "../schema";
+import type { NotificationPaginatedResponse } from "../schema/user";
 import { ErrorUtil } from "../util";
 
 const { TWITTER_CLIENT_ID, TWITTER_CLIENT_SECRET, TWITTER_CALLBACK_URL, DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_CALLBACK_URL, USER_JWT_SECRET } = Bun.env;
@@ -64,6 +66,18 @@ const User = z.object({
 	updatedAt: z.date()
 });
 type User = z.infer<typeof User>;
+
+const Notification = z.object({
+	id: z.string(),
+	userId: z.string(),
+	title: z.string(),
+	message: z.string(),
+	type: NotificationType,
+	betId: z.string().nullable(),
+	createdAt: z.date(),
+	updatedAt: z.date()
+});
+type Notification = z.infer<typeof Notification>;
 
 /**
  * This function is used to generate the Twitter authentication URL.
@@ -594,7 +608,73 @@ const addFcmToken = async (userId: string, token: string) => {
 	}
 };
 
+/**
+ * This function is used to get a user's notifications.
+ * It queries the "user".notification table in the database for notifications with the provided user ID.
+ * The query is paginated using the provided page number and limit.
+ * The page number is zero-based, so the first page is page 0.
+ * The limit is the maximum number of notifications to return per page.
+ * It also counts the total number of notifications for the user.
+ * The response is then parsed using the Notification zod schema to ensure it matches the expected structure.
+ * Finally, it returns an object containing the parsed notifications, the total number of notifications, the current page number (one-based), and the limit.
+ *
+ * @param {string} userId - The ID of the user.
+ * @param {number} page - The page number (zero-based).
+ * @param {number} limit - The maximum number of notifications to return per page.
+ * @returns {Promise<NotificationPaginatedResponse>} An object containing the parsed notifications, the total number of notifications, the current page number (one-based), and the limit.
+ * @async
+ */
+const getNotifications = async (userId: string, page: number, limit: number): Promise<NotificationPaginatedResponse> => {
+	const notifications = db.sql`SELECT *
+                               FROM "user".notification
+                               WHERE user_id = ${userId}
+                               LIMIT ${limit} OFFSET ${page * limit}`;
+	const total = db.sql`SELECT COUNT(*)
+                       FROM "user".notification
+                       WHERE user_id = ${userId}` as Promise<[{ count: string }]>;
+
+	const [notificationsRes, [totalRes]] = await Promise.all([notifications, total]);
+
+	return {
+		notifications: z.array(Notification).parse(notificationsRes),
+		total: Number(totalRes.count),
+		page: page + 1,
+		limit
+	};
+};
+
+/**
+ * This function is used to mark a user's notification as read.
+ * It updates the "read" field to true in the "user".notification table in the database for the notification with the provided user ID and notification ID.
+ * The "updated_at" field is also updated to the current time.
+ * The update is only performed if the "read" field is currently false.
+ * After the update, it retrieves the updated notification from the database and parses the notification data using the Notification zod schema to ensure it matches the expected structure.
+ * If the notification does not exist or is already read, it throws an HTTP exception with status code 400 and message "Notification not found or already read".
+ * Finally, it returns the parsed notification data.
+ *
+ * @param {string} userId - The ID of the user.
+ * @param {string} notificationId - The ID of the notification.
+ * @returns {Promise<Notification>} The updated notification data.
+ * @throws {ErrorUtil.HttpException} If the notification does not exist or is already read.
+ * @async
+ */
+const markNotificationAsRead = async (userId: string, notificationId: string): Promise<Notification> => {
+	const [notification] = z.array(Notification).parse(
+		await db.sql`UPDATE "user".notification
+                 SET read = true
+                 WHERE user_id = ${userId}
+                   AND id = ${notificationId}
+                   AND read = false
+                   AND updated_at = ${new Date()}`
+	);
+
+	if (!notification) throw new ErrorUtil.HttpException(400, "Notification not found or already read");
+
+	return notification;
+};
+
 const sendNotification = async (
+	sql: TransactionSql,
 	userId: string,
 	type: NotificationType,
 	data: {
@@ -621,12 +701,12 @@ const sendNotification = async (
 
 		const message =
 			type === "bet"
-				? `You placed a bet of ${betQuantity} quantities on ${option.name} option for ${event.name}`
+				? `You placed a bet of ${betQuantity > 1 ? `${betQuantity} quantities` : "1 quantity"} on ${option.name} option for ${event.name}`
 				: type === "bet_win"
-					? `You won a bet of ${betQuantity} quantities on ${option.name} option for ${event.name}`
+					? `You won a bet of ${betQuantity > 1 ? `${betQuantity} quantities` : "1 quantity"} on ${option.name} option for ${event.name}`
 					: type === "bet_cancel"
-						? `You cancelled a bet of ${betQuantity} quantities on ${option.name} option for ${event.name}`
-						: `You exited a bet of ${betQuantity} quantities on ${option.name} option for ${event.name}`;
+						? `You cancelled a bet of ${betQuantity > 1 ? `${betQuantity} quantities` : "1 quantity"} on ${option.name} option for ${event.name}`
+						: `You exited a bet of ${betQuantity > 1 ? `${betQuantity} quantities` : "1 quantity"} on ${option.name} option for ${event.name}`;
 
 		notificationSqlPayload = {
 			id: createId(),
@@ -639,7 +719,19 @@ const sendNotification = async (
 	}
 
 	//@ts-ignore
-	await db.sql`INSERT INTO "user".notification ${db.sql(notificationSqlPayload)}`;
+	await sql`INSERT INTO "user".notification ${db.sql(notificationSqlPayload)}`;
+	try {
+		await getMessaging().sendToTopic(userId, {
+			notification: {
+				//@ts-ignore
+				title: notificationSqlPayload.title,
+				//@ts-ignore
+				body: notificationSqlPayload.message
+			}
+		});
+	} catch (e) {
+		console.error("Error sending notification", e);
+	}
 };
 
 export {
@@ -648,6 +740,8 @@ export {
 	ReferralCode,
 	User,
 	userJwtSecret,
+	NotificationType,
+	Notification,
 	getTwitterAuthURL,
 	getLoggedInClient,
 	getSocialAccountById,
@@ -660,5 +754,7 @@ export {
 	getReferralCodes,
 	getAllUsers,
 	addFcmToken,
-	sendNotification
+	sendNotification,
+	getNotifications,
+	markNotificationAsRead
 };
