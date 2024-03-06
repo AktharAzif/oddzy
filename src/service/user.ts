@@ -1,5 +1,6 @@
 import { createId } from "@paralleldrive/cuid2";
 import { TwitterApiAutoTokenRefresher } from "@twitter-api-v2/plugin-token-refresher";
+import { getMessaging } from "firebase-admin/messaging";
 import * as jose from "jose";
 import { TwitterApi } from "twitter-api-v2";
 import { z } from "zod";
@@ -568,6 +569,24 @@ const getAllUsers = async (page: number, limit: number): Promise<UserSchema.User
 	};
 };
 
+/**
+ * This function is used to add a Firebase Cloud Messaging (FCM) token for a user.
+ * It subscribes the provided FCM token to the "all" topic using the `subscribeToTopic` method from the Firebase Admin SDK's Messaging service.
+ * If the subscription is successful, it does not return anything.
+ * If the subscription fails (e.g., the provided FCM token is invalid), it throws an HTTP exception with status code 400 and message "Invalid FCM token".
+ *
+ * @param {string} userId - The ID of the user. This parameter is currently not used in the function.
+ * @param {string} token - The FCM token to be added.
+ * @throws {ErrorUtil.HttpException} If the FCM token is invalid.
+ * @async
+ */
+const addFcmToken = async (userId: string, token: string) =>
+	await getMessaging()
+		.subscribeToTopic(token, "all")
+		.catch((err) => {
+			throw new ErrorUtil.HttpException(400, "Invalid FCM token");
+		});
+
 export {
 	SocialPlatform,
 	Social,
@@ -584,5 +603,6 @@ export {
 	updateUser,
 	getAccess,
 	getReferralCodes,
-	getAllUsers
+	getAllUsers,
+	addFcmToken
 };

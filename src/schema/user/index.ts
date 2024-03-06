@@ -127,4 +127,19 @@ builder.queryField("users", (t) =>
 	})
 );
 
+builder.mutationField("addFcmToken", (t) =>
+	t.field({
+		authScopes: { user: true },
+		type: "Boolean",
+		args: {
+			token: t.arg.string({ required: true, description: "The FCM token of the user." })
+		},
+		resolve: async (_, { token }, { user }) => {
+			await UserService.addFcmToken((user as UserService.User).id, token);
+			return true;
+		},
+		description: "Adds the FCM token of the user for push notifications."
+	})
+);
+
 export { User, UserPaginatedResponse };
