@@ -604,6 +604,28 @@ const getEvents = async (payload: EventSchema.getEventsPayload, page: number, li
 };
 
 /**
+ * This function is used to delete an event from the database.
+ * It deletes the event with the provided ID and returns the deleted event.
+ * If the event has any associated bets, it throws an HTTP exception with status code 400 and message "Only events with no bets can be deleted".
+ * If the event does not exist, it throws an HTTP exception with status code 404 and message "Event not found".
+ *
+ * @param {string} id - The ID of the event to be deleted.
+ * @returns {Promise<Event>} The deleted event.
+ * @throws {ErrorUtil.HttpException} If the event has any associated bets or does not exist.
+ * @async
+ */
+const deleteEvent = async (id: string): Promise<Event> => {
+	const res = await db.sql`DELETE
+                           FROM "event".event
+                           WHERE id = ${id}
+                           RETURNING *;`.catch(() => {
+		throw new ErrorUtil.HttpException(400, "Only events with no bets can be deleted");
+	});
+	if (!res.length) throw new ErrorUtil.HttpException(404, "Event not found");
+	return Event.parse(res[0]);
+};
+
+/**
  * Flag to prevent multiple instances of the changeEventStatus function from running concurrently.
  */
 let changeEventStatusRunning = false;
@@ -695,5 +717,6 @@ export {
 	updateEvent,
 	updateEventCategories,
 	getOption,
-	getEventByBetId
+	getEventByBetId,
+	deleteEvent
 };

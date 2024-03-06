@@ -405,6 +405,18 @@ builder.mutationField("updateEvent", (t) =>
 	})
 );
 
+builder.mutationField("deleteEvent", (t) =>
+	t.field({
+		type: Event,
+		authScopes: { admin: true },
+		args: {
+			id: t.arg.string({ required: true, description: "The unique identifier of the event" })
+		},
+		resolve: async (_, { id }) => await EventService.deleteEvent(id),
+		description: "Delete an event by its unique identifier. Only accessible to admin."
+	})
+);
+
 export type {
 	CreateEventPayload,
 	CreateOrUpdateCategoryPayload,
