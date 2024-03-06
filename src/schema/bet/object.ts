@@ -129,4 +129,21 @@ BetPaginatedResponse.implement({
 });
 type BetPaginatedResponse = typeof BetPaginatedResponse.$inferType;
 
-export { Bet, BetTypeEnum, BetStatusEnum, BetPaginatedResponse };
+const InvestedAndCurrentAmountResponse = builder.objectRef<{
+	investedAmount: number;
+	currentAmount: number;
+}>("InvestedAndCurrentAmountResponse");
+
+InvestedAndCurrentAmountResponse.implement({
+	fields: (t) => ({
+		investedAmount: t.exposeFloat("investedAmount", {
+			description: "The invested amount"
+		}),
+		currentAmount: t.exposeFloat("currentAmount", {
+			description: "The current amount"
+		})
+	}),
+	description: "The response object for the invested and current amount."
+});
+
+export { Bet, BetTypeEnum, BetStatusEnum, BetPaginatedResponse, InvestedAndCurrentAmountResponse };

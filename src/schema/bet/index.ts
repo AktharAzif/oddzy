@@ -2,7 +2,7 @@ import { builder } from "../../config";
 import { BetService, UserService } from "../../service";
 import { UserSchema, WalletSchema } from "../index.ts";
 import { GetBetsPayload, PlaceBetPayload } from "./input.ts";
-import { Bet, BetPaginatedResponse, BetStatusEnum, BetTypeEnum } from "./object.ts";
+import { Bet, BetPaginatedResponse, BetStatusEnum, BetTypeEnum, InvestedAndCurrentAmountResponse } from "./object.ts";
 
 builder.mutationField("placeBet", (t) =>
 	t.field({
@@ -95,6 +95,28 @@ builder.mutationField("cancelBet", (t) =>
 		},
 		resolve: async (_, { betId, quantity, eventId }, { user }) => await BetService.cancelBet((user as UserService.User).id, eventId, betId, quantity),
 		description: "Cancel a bet"
+	})
+);
+
+builder.queryField("investedAndCurrentAmount", (t) =>
+	t.field({
+		type: InvestedAndCurrentAmountResponse,
+		authScopes: (_, __, { user }) => (user && user.access) || false,
+		args: {
+			status: t.arg({
+				type: BetStatusEnum,
+				description: "The status of the bet. It can be either live or closed",
+				required: true
+			}),
+			filter: t.arg({
+				type: UserSchema.TimeFilterEnum,
+				description: "The filter to be applied to the bets based on time. It can be either day, week, month, year or all",
+				required: true,
+				defaultValue: "all"
+			})
+		},
+		resolve: async (_, { status, filter }, { user }) => await BetService.getInvestedAndCurrentAmount((user as UserService.User).id, filter, status),
+		description: "Get invested and current amount"
 	})
 );
 
