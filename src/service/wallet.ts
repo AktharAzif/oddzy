@@ -680,6 +680,38 @@ const withdrawSplToken = async (userId: string, amount: number, address: string,
 	return Transaction.parse((await db.sql`INSERT INTO "wallet".transaction ${db.sql(payload)} RETURNING *`)[0]);
 };
 
+/**
+ * This function is used to get the conversion rate of a token to USD.
+ * It supports two types of tokens: "eth" and other ERC20 tokens.
+ * For "eth", it fetches the conversion rate from the Coinbase API.
+ * For other ERC20 or SPL tokens, it fetches the conversion rate from the DexScreener API.
+ *
+ * @async
+ * @function getTokenConversionRate
+ * @param {string} address - The contract address of the ERC20 or SPL token. This is not used if the token is "eth".
+ * @param {Token} token - The token to get the conversion rate for. This can be "eth" or any ERC20 or SPL token.
+ * @returns {Promise<number>} - A promise that resolves to the conversion rate of the token to USD.
+ * @throws {Error} - If an error occurs while fetching the conversion rate from the API.
+ */
+const getTokenConversionRate = async (address: string, token: Token): Promise<number> => {
+	if (token === "eth") {
+		const data = (await fetch(`https://api.coinbase.com/v2/exchange-rates?currency=${token}`).then((res) => res.json())) as {
+			data: {
+				rates: {
+					USD: string;
+				};
+			};
+		};
+		return Number(data.data.rates.USD);
+	}
+
+	const data = (await fetch(`https://api.dexscreener.com/latest/dex/tokens/${address}`).then((res) => res.json())) as {
+		pairs: { chainId: string; priceUsd: string }[];
+	};
+
+	return Number(data.pairs[0].priceUsd);
+};
+
 export {
 	Token,
 	Chain,
@@ -700,5 +732,6 @@ export {
 	verifyErc20Deposit,
 	verifySplTokenDeposit,
 	withDrawErc20Token,
-	withdrawSplToken
+	withdrawSplToken,
+	getTokenConversionRate
 };

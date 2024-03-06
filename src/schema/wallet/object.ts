@@ -206,6 +206,8 @@ SigningMessageResponse.implement({
 const TokenCombination = builder.objectRef<{
 	token: WalletService.Token;
 	chain: WalletService.Chain;
+	address: string;
+	decimals: number;
 }>("TokenCombination");
 
 TokenCombination.implement({
@@ -219,6 +221,17 @@ TokenCombination.implement({
 			type: ChainEnum,
 			resolve: (parent) => parent.chain,
 			description: "The chain name."
+		}),
+		address: t.exposeString("address", {
+			description: "The address of the token."
+		}),
+		decimals: t.exposeInt("decimals", {
+			description: "The decimals of the token."
+		}),
+		price: t.field({
+			type: "Float",
+			resolve: async (parent) => await WalletService.getTokenConversionRate(parent.address, parent.token),
+			description: "The price of the token."
 		})
 	}),
 	description: "The response object for the token combination."

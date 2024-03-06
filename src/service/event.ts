@@ -626,6 +626,27 @@ const deleteEvent = async (id: string): Promise<Event> => {
 };
 
 /**
+ * This function retrieves the total pool of an event from the database using the event's ID.
+ * The pool is calculated as the sum of the used reward amount and the product of the quantity and price per quantity for all bets of type 'buy' associated with the event.
+ * The function returns the total pool as a number.
+ *
+ * @async
+ * @function getEventPool
+ * @param {string} eventId - The ID of the event whose pool is to be retrieved.
+ * @returns {Promise<number>} - Returns a promise that resolves to the total pool of the event as a number.
+ */
+const getEventPool = async (eventId: string): Promise<number> => {
+	const [pool] = (await db.sql`
+      SELECT SUM(reward_amount_used + (quantity * price_per_quantity))
+      FROM "event".bet
+      WHERE event_id = ${eventId}
+        AND type = 'buy'
+	`) as [{ sum: string }];
+
+	return Number(pool.sum);
+};
+
+/**
  * Flag to prevent multiple instances of the changeEventStatus function from running concurrently.
  */
 let changeEventStatusRunning = false;
@@ -718,5 +739,6 @@ export {
 	updateEventCategories,
 	getOption,
 	getEventByBetId,
-	deleteEvent
+	deleteEvent,
+	getEventPool
 };

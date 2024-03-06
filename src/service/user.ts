@@ -630,6 +630,7 @@ const getNotifications = async (userId: string, page: number, limit: number): Pr
 	const notifications = db.sql`SELECT *
                                FROM "user".notification
                                WHERE user_id = ${userId}
+                               ORDER BY created_at DESC
                                LIMIT ${limit} OFFSET ${page * limit}`;
 	const total = db.sql`SELECT COUNT(*)
                        FROM "user".notification

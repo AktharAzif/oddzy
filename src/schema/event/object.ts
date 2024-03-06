@@ -208,6 +208,11 @@ Event.implement({
 			resolve: (parent) => parent.status,
 			description: "The status of the event"
 		}),
+		pool: t.field({
+			type: "Float",
+			resolve: async (parent) => await EventService.getEventPool(parent.id),
+			description: "The total pool of the event"
+		}),
 		resolved: t.exposeBoolean("resolved", {
 			authScopes: { admin: true },
 			description: "If true, the payouts have been done. Only the admin can access this field."
