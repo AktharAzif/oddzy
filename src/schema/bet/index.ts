@@ -20,7 +20,8 @@ builder.mutationField("placeBet", (t) =>
 			}),
 			buyBetId: t.arg.string({
 				description: "Buy bet id for sell bet. Must be present if the bet is a sell bet"
-			})
+			}),
+			referredBy: t.arg.string({ description: "The unique identifier of the user who invited the user to place the bet" })
 		},
 		validate: {
 			schema: PlaceBetPayload
@@ -56,7 +57,7 @@ builder.queryField("bets", (t) =>
 				type: UserSchema.TimeFilterEnum,
 				description: "The filter to be applied to the bets based on time. It can be either day, week, month, year or all"
 			}),
-			
+
 			type: t.arg({
 				type: BetTypeEnum,
 				description: "The type of the bet. It can be either buy or sell"
