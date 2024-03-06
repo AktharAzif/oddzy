@@ -1,5 +1,6 @@
 import { createId } from "@paralleldrive/cuid2";
-import { type AccountInfo, Keypair, type ParsedAccountData, PublicKey, type RpcResponseAndContext } from "@solana/web3.js";
+import { createTransferInstruction, getOrCreateAssociatedTokenAccount } from "@solana/spl-token";
+import { type AccountInfo, Keypair, type ParsedAccountData, PublicKey, type RpcResponseAndContext, sendAndConfirmTransaction, Transaction as SolanaTransaction } from "@solana/web3.js";
 import base58 from "bs58";
 import { ethers } from "ethers";
 import type { Sql, TransactionSql } from "postgres";
@@ -104,7 +105,7 @@ const TokenCombination = [
 ] as const;
 
 /**
- * The ABI (Application Binary Interface) for the ERC20 token transfer event.
+ * The ABI (Application Binary Interface) for the ERC20 token transfer function & event.
  * This is used to interact with the Ethereum blockchain and specifically with ERC20 tokens.
  */
 const erc20TransferEventAbi = [
@@ -117,6 +118,20 @@ const erc20TransferEventAbi = [
 		],
 		name: "Transfer",
 		type: "event"
+	},
+	{
+		inputs: [
+			{ internalType: "address", name: "to", type: "address" },
+			{
+				internalType: "uint256",
+				name: "amount",
+				type: "uint256"
+			}
+		],
+		name: "transfer",
+		outputs: [{ internalType: "bool", name: "", type: "bool" }],
+		stateMutability: "nonpayable",
+		type: "function"
 	}
 ];
 
@@ -560,6 +575,111 @@ const verifySplTokenDeposit = async (userId: string, token: Token, hash: string)
 	return z.array(Transaction).parse(await db.sql`INSERT INTO "wallet".transaction ${db.sql(insertTxSqlPayload)} RETURNING *`);
 };
 
+/**
+ * This function is used to withdraw ERC20 tokens from a user's account.
+ * It first checks if the token and chain combination is valid.
+ * Then it retrieves the user's balance for the specified token and chain.
+ * It checks if the user has sufficient balance to withdraw the specified amount.
+ * It also checks if the user has not exceeded the maximum number of transactions per hour.
+ * If all checks pass, it creates a new Ethereum wallet with the platform's private key and the provided Ethereum provider.
+ * It then creates a new contract instance for the token using the platform's wallet as the signer.
+ * It sends a transfer transaction to the blockchain to transfer the specified amount of tokens to the provided address.
+ * It waits for the transaction to be mined.
+ * Finally, it creates a new transaction in the database for the withdrawal and returns it.
+ *
+ * @async
+ * @function withDrawErc20Token
+ * @param {string} userId - The ID of the user who is making the withdrawal.
+ * @param {number} amount - The amount of tokens to withdraw.
+ * @param {string} address - The address to send the tokens to.
+ * @param {Token} token - The token to withdraw.
+ * @param {Chain} chain - The chain where the token resides.
+ * @param {ethers.JsonRpcProvider} provider - The Ethereum provider to interact with the blockchain.
+ * @returns {Promise<Transaction>} - A promise that resolves to the created transaction.
+ * @throws {ErrorUtil.HttpException} - If the token and chain combination is invalid, if the user has insufficient balance, if the user has exceeded the maximum number of transactions per hour, or if an error occurs while interacting with the blockchain.
+ */
+const withDrawErc20Token = async (userId: string, amount: number, address: string, token: Token, chain: Chain, provider: ethers.JsonRpcProvider): Promise<Transaction> => {
+	const combination = TokenCombination.find((item) => item.token === token && item.chain === chain);
+	if (!combination) throw new ErrorUtil.HttpException(400, "Invalid token and chain combination.");
+
+	const { totalBalance, rewardBalance } = await getUserTokenBalance(db.sql, userId, token, chain);
+	const balance = totalBalance - rewardBalance;
+
+	if (amount > balance) throw new ErrorUtil.HttpException(400, "Insufficient balance.");
+
+	const [{ count }] = (await db.sql`SELECT COUNT(*)
+                                    FROM "wallet".transaction
+                                    WHERE user_id = ${userId}
+                                      AND tx_for = 'withdraw'
+                                      AND created_at > NOW() - INTERVAL '1 hour'`) as [{ count: string }];
+	if (Number(count) > 5) throw new ErrorUtil.HttpException(400, "Maximum 5 transactions per hour.");
+
+	const signer = new ethers.Wallet(EVM_PRIVATE_KEY as string, provider);
+
+	const contract = new ethers.Contract(combination.address, erc20TransferEventAbi, signer);
+
+	const tx = await contract.transfer(address, ethers.parseUnits(amount.toString(), combination.decimals));
+	await tx.wait();
+
+	const payload = generateTxSqlPayload(userId, "withdraw", -amount, 0, token, chain, tx.hash);
+	return Transaction.parse((await db.sql`INSERT INTO "wallet".transaction ${db.sql(payload)} RETURNING *`)[0]);
+};
+
+/**
+ * This function is used to withdraw SPL tokens from a user's account.
+ * It first checks if the token and chain combination is valid.
+ * Then it retrieves the user's balance for the specified token in the Solana chain.
+ * It checks if the user has sufficient balance to withdraw the specified amount.
+ * It also checks if the user has not exceeded the maximum number of transactions per hour.
+ * If all checks pass, it retrieves the source and destination accounts for the token transfer.
+ * It then creates a new Solana transaction and adds a transfer instruction to it.
+ * It sends the transaction to the Solana network and waits for it to be confirmed.
+ * Finally, it creates a new transaction in the database for the withdrawal and returns it.
+ *
+ * @async
+ * @function withdrawSplToken
+ * @param {string} userId - The ID of the user who is making the withdrawal.
+ * @param {number} amount - The amount of tokens to withdraw.
+ * @param {string} address - The address to send the tokens to.
+ * @param {Token} token - The token to withdraw.
+ * @returns {Promise<Transaction>} - A promise that resolves to the created transaction.
+ * @throws {ErrorUtil.HttpException} - If the token and chain combination is invalid, if the user has insufficient balance, if the user has exceeded the maximum number of transactions per hour, or if an error occurs while interacting with the blockchain.
+ */
+const withdrawSplToken = async (userId: string, amount: number, address: string, token: Token): Promise<Transaction> => {
+	const combination = TokenCombination.find((item) => item.token === token && item.chain === "solana");
+	if (!combination) throw new ErrorUtil.HttpException(400, "Invalid token and chain combination.");
+
+	const { totalBalance, rewardBalance } = await getUserTokenBalance(db.sql, userId, token, "solana");
+	const balance = totalBalance - rewardBalance;
+
+	if (amount > balance) throw new ErrorUtil.HttpException(400, "Insufficient balance.");
+
+	const [{ count }] = (await db.sql`SELECT COUNT(*)
+                                    FROM "wallet".transaction
+                                    WHERE user_id = ${userId}
+                                      AND tx_for = 'withdraw'
+                                      AND created_at > NOW() - INTERVAL '1 hour'`) as [{ count: string }];
+	if (Number(count) > 5) throw new ErrorUtil.HttpException(400, "Maximum 5 transactions per hour.");
+
+	const provider = rpcProviders.solana;
+
+	const source = await getOrCreateAssociatedTokenAccount(provider, solanaWallet, new PublicKey(combination.address), solanaWallet.publicKey, false, "confirmed");
+
+	const destination = await getOrCreateAssociatedTokenAccount(provider, solanaWallet, new PublicKey(combination.address), new PublicKey(address), false, "confirmed");
+
+	const tx = new SolanaTransaction(); //Alias for Transaction
+	tx.add(createTransferInstruction(source.address, destination.address, solanaWallet.publicKey, amount * 10 ** combination.decimals));
+
+	const latestBlockHash = await provider.getLatestBlockhash("confirmed");
+	tx.recentBlockhash = latestBlockHash.blockhash; //Good practice to fetch the latest block hash before sending the transaction
+
+	const signature = await sendAndConfirmTransaction(provider, tx, [solanaWallet]);
+
+	const payload = generateTxSqlPayload(userId, "withdraw", -amount, 0, token, "solana", signature);
+
+	return Transaction.parse((await db.sql`INSERT INTO "wallet".transaction ${db.sql(payload)} RETURNING *`)[0]);
+};
+
 export {
 	Token,
 	Chain,
@@ -578,5 +698,7 @@ export {
 	verifyMessage,
 	getLinkedWallets,
 	verifyErc20Deposit,
-	verifySplTokenDeposit
+	verifySplTokenDeposit,
+	withDrawErc20Token,
+	withdrawSplToken
 };

@@ -127,18 +127,9 @@ builder.mutationField("depositSplToken", (t) =>
 				required: true,
 				description: "The SPL token name."
 			}),
-			chain: t.arg({
-				type: ChainEnum,
-				required: true,
-				description: "The chain of the deposit."
-			}),
 			hash: t.arg.string({ required: true, description: "The transaction hash of the deposit." })
 		},
-		resolve: async (_, { chain, hash, token }, { user }) => {
-			if (chain !== "solana") throw new ErrorUtil.HttpException(400, "Use depositErc20Token for Ethereum chain");
-
-			return await WalletService.verifySplTokenDeposit((user as UserService.User).id, token, hash);
-		},
+		resolve: async (_, { hash, token }, { user }) => await WalletService.verifySplTokenDeposit((user as UserService.User).id, token, hash),
 		description: "Verify the deposit of a SPL token to the user's account."
 	})
 );
@@ -148,6 +139,52 @@ builder.queryField("tokenCombinations", (t) =>
 		type: [TokenCombination],
 		resolve: () => WalletService.TokenCombination,
 		description: "Fetches the token combinations."
+	})
+);
+
+builder.mutationField("withdrawErc20Token", (t) =>
+	t.field({
+		type: Transaction,
+		authScopes: (_, __, { user }) => (user && user.access) || false,
+		args: {
+			token: t.arg({
+				type: TokenEnum,
+				required: true,
+				description: "The ERC20 token name."
+			}),
+			chain: t.arg({
+				type: ChainEnum,
+				required: true,
+				description: "The chain of the deposit."
+			}),
+			address: t.arg.string({ required: true, description: "The address to which the tokens are to be withdrawn." }),
+			amount: t.arg.int({ required: true, description: "The amount of tokens to be withdrawn." })
+		},
+		resolve: async (_, { chain, amount, address, token }, { user }) => {
+			if (chain === "solana") throw new ErrorUtil.HttpException(400, "Use withdrawSplToken for Solana chain");
+
+			const provider = rpcProviders[chain];
+			return await WalletService.withDrawErc20Token((user as UserService.User).id, amount, address, token, chain, provider);
+		},
+		description: "Withdraw an ERC20 token from the user's account."
+	})
+);
+
+builder.mutationField("withdrawSplToken", (t) =>
+	t.field({
+		type: Transaction,
+		authScopes: (_, __, { user }) => (user && user.access) || false,
+		args: {
+			token: t.arg({
+				type: TokenEnum,
+				required: true,
+				description: "The SPL token name."
+			}),
+			address: t.arg.string({ required: true, description: "The address to which the tokens are to be withdrawn." }),
+			amount: t.arg.int({ required: true, description: "The amount of tokens to be withdrawn." })
+		},
+		resolve: async (_, { address, amount, token }, { user }) => await WalletService.withdrawSplToken((user as UserService.User).id, amount, address, token),
+		description: "Withdraw an SPL token from the user's account."
 	})
 );
 
