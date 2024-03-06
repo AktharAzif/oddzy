@@ -219,6 +219,11 @@ Event.implement({
 			nullable: true,
 			description: "The date and time when the last bet was placed"
 		}),
+		totalTrades: t.field({
+			type: "Int",
+			resolve: async (parent) => await EventService.getTotalTrades(parent.id),
+			description: "The total number of trades in the event"
+		}),
 		resolved: t.exposeBoolean("resolved", {
 			authScopes: { admin: true },
 			description: "If true, the payouts have been done. Only the admin can access this field."

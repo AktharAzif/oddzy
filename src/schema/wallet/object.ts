@@ -231,7 +231,7 @@ TokenCombination.implement({
 		price: t.field({
 			type: "Float",
 			resolve: async (parent) => await WalletService.getTokenConversionRate(parent.address, parent.token),
-			description: "The price of the token."
+			description: "The price of the token in USD."
 		})
 	}),
 	description: "The response object for the token combination."

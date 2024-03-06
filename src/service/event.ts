@@ -666,6 +666,25 @@ const getLastBetTime = async (eventId: string): Promise<Date> => {
 };
 
 /**
+ * This function retrieves the total number of trades (bets) associated with a specific event from the database using the event's ID.
+ * The function returns the total number of trades as a number.
+ *
+ * @async
+ * @function getTotalTrades
+ * @param {string} eventId - The ID of the event whose total number of trades is to be retrieved.
+ * @returns {Promise<number>} - Returns a promise that resolves to the total number of trades associated with the event as a number.
+ */
+const getTotalTrades = async (eventId: string): Promise<number> => {
+	const [totalTrades] = (await db.sql`
+      SELECT COUNT(*)
+      FROM "event".bet
+      WHERE event_id = ${eventId}
+	`) as [{ count: string }];
+
+	return Number(totalTrades.count);
+};
+
+/**
  * Flag to prevent multiple instances of the changeEventStatus function from running concurrently.
  */
 let changeEventStatusRunning = false;
@@ -760,5 +779,6 @@ export {
 	getEventByBetId,
 	deleteEvent,
 	getEventPool,
-	getLastBetTime
+	getLastBetTime,
+	getTotalTrades
 };
