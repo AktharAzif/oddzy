@@ -135,7 +135,7 @@ const getBets = async (userId: string | null = null, payload: BetSchema.GetBetsP
  *    - It adds the retrieved sum to the current value.
  * 4. If the status is not "live", it calculates the invested amount and current value for closed bets.
  *    - It retrieves the sum of the quantity multiplied by the price per quantity for all closed buy bets of the user.
- *    - It adds the retrieved sum to the invested amount.
+ *    - It adds the retrieved sum to the invested amount and current value.
  *    - It retrieves the sum of the profit for all closed bets of the user.
  *    - It adds the retrieved sum to the current value.
  * 5. Returns an object containing the invested amount and current value.
@@ -219,6 +219,7 @@ const getInvestedAndCurrentAmount = async (
 			];
 
 			investedAmount += Number(res1.investedAmount);
+			currentAmount += Number(res1.investedAmount);
 
 			const [res2] = (await sql`SELECT SUM(profit) AS current_amount
                                 FROM "event".bet
