@@ -6,7 +6,7 @@ import { BetSchema } from "../schema";
 import { ErrorUtil } from "../util";
 import { Event, getEvent, getEventOptions, Option } from "./event.ts";
 import { UserService } from "./index.ts";
-import { generateTxSqlPayload, getUserTokenBalance, type Transaction } from "./wallet.ts";
+import { Chain, generateTxSqlPayload, getUserTokenBalance, Token, type Transaction } from "./wallet.ts";
 
 const BetType = z.enum(["buy", "sell"]);
 type BetType = z.infer<typeof BetType>;
@@ -123,6 +123,15 @@ const getBets = async (userId: string | null = null, payload: BetSchema.GetBetsP
 /**
  * This function calculates the invested and current amount of a user's bets based on the provided filter and status.
  *
+ * @async
+ * @function getInvestedAndCurrentAmount
+ * @param {string} userId - The ID of the user whose invested and current amount is to be calculated.
+ * @param {UserService.TimeFilter} timeFilter - The time filter for retrieving the bets.
+ * @param {BetStatus} status - The status of the bets to be included in the calculation.
+ * @param {Token} [token] - The token type of the bets to be included in the calculation. Optional.
+ * @param {Chain} [chain] - The chain type of the bets to be included in the calculation. Optional.
+ * @returns {Promise<{investedAmount: number, currentAmount: number}>} - A promise that resolves to an object containing the invested amount and current value.
+ *
  * The function performs the following steps:
  * 1. Begins a SQL transaction.
  * 2. Initializes variables for the invested amount and current value.
@@ -135,22 +144,17 @@ const getBets = async (userId: string | null = null, payload: BetSchema.GetBetsP
  *    - It adds the retrieved sum to the current value.
  * 4. If the status is not "live", it calculates the invested amount and current value for closed bets.
  *    - It retrieves the sum of the quantity multiplied by the price per quantity for all closed buy bets of the user.
- *    - It adds the retrieved sum to the invested amount and current value.
+ *    - It adds the retrieved sum to the invested amount.
  *    - It retrieves the sum of the profit for all closed bets of the user.
  *    - It adds the retrieved sum to the current value.
  * 5. Returns an object containing the invested amount and current value.
- *
- * @async
- * @function getInvestedAndCurrentAmount
- * @param {string} userId - The ID of the user whose invested and current amount is to be calculated.
- * @param {UserService.TimeFilter} filter - The time filter for retrieving the bets.
- * @param {BetStatus} status - The status of the bets to be included in the calculation.
- * @returns {Promise<{investedAmount: number, currentAmount: number}>} - A promise that resolves to an object containing the invested amount and current value.
  */
 const getInvestedAndCurrentAmount = async (
 	userId: string,
-	filter: UserService.TimeFilter,
-	status: BetStatus
+	timeFilter: UserService.TimeFilter,
+	status: BetStatus,
+	token?: Token | null,
+	chain?: Chain | null
 ): Promise<{
 	investedAmount: number;
 	currentAmount: number;
@@ -165,7 +169,7 @@ const getInvestedAndCurrentAmount = async (
                                 WHERE b.user_id = ${userId}
                                   AND b.type = 'buy'
                                   AND b.profit IS NULL
-                                    ${filter === "day" ? sql`AND b.created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? sql`AND b.created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? sql`AND b.created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? sql`AND b.created_at > NOW() - INTERVAL '1 year'` : sql``}
+                                    ${timeFilter === "day" ? sql`AND b.created_at > NOW() - INTERVAL '1 day'` : timeFilter === "week" ? sql`AND b.created_at > NOW() - INTERVAL '1 week'` : timeFilter === "month" ? sql`AND b.created_at > NOW() - INTERVAL '1 month'` : timeFilter === "year" ? sql`AND b.created_at > NOW() - INTERVAL '1 year'` : sql``} ${token ? sql`AND e.token = ${token}` : sql``} ${chain ? sql`AND e.chain = ${chain}` : sql``}
 			`) as [
 				{
 					investedAmount: string | null;
@@ -179,7 +183,7 @@ const getInvestedAndCurrentAmount = async (
                                 WHERE b.user_id = ${userId}
                                   AND b.type = 'sell'
                                   AND b.profit IS NULL
-                                    ${filter === "day" ? sql`AND b.created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? sql`AND b.created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? sql`AND b.created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? sql`AND b.created_at > NOW() - INTERVAL '1 year'` : sql``}`) as [
+                                    ${timeFilter === "day" ? sql`AND b.created_at > NOW() - INTERVAL '1 day'` : timeFilter === "week" ? sql`AND b.created_at > NOW() - INTERVAL '1 week'` : timeFilter === "month" ? sql`AND b.created_at > NOW() - INTERVAL '1 month'` : timeFilter === "year" ? sql`AND b.created_at > NOW() - INTERVAL '1 year'` : sql``} ${token ? sql`AND e.token = ${token}` : sql``} ${chain ? sql`AND e.chain = ${chain}` : sql``}`) as [
 				{
 					investedAmount: string | null;
 				}
@@ -196,8 +200,7 @@ const getInvestedAndCurrentAmount = async (
                                 WHERE b.user_id = ${userId}
                                   AND b.type = 'buy'
                                   AND b.profit IS NULL
-                                    ${filter === "day" ? sql`AND b.created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? sql`AND b.created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? sql`AND b.created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? sql`AND b.created_at > NOW() - INTERVAL '1 year'` : sql``}
-			`) as [
+                                    ${timeFilter === "day" ? sql`AND b.created_at > NOW() - INTERVAL '1 day'` : timeFilter === "week" ? sql`AND b.created_at > NOW() - INTERVAL '1 week'` : timeFilter === "month" ? sql`AND b.created_at > NOW() - INTERVAL '1 month'` : timeFilter === "year" ? sql`AND b.created_at > NOW() - INTERVAL '1 year'` : sql``} ${token ? sql`AND e.token = ${token}` : sql``} ${chain ? sql`AND e.chain = ${chain}` : sql``}`) as [
 				{
 					currentAmount: string | null;
 				}
@@ -210,9 +213,7 @@ const getInvestedAndCurrentAmount = async (
                                 WHERE b.user_id = ${userId}
                                   AND b.type = 'buy'
                                   AND b.profit IS NOT NULL
-                                    ${filter === "day" ? sql`AND b.created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? sql`AND b.created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? sql`AND b.created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? sql`AND b.created_at > NOW() - INTERVAL '1 year'` : sql``}
-
-			`) as [
+                                    ${timeFilter === "day" ? sql`AND b.created_at > NOW() - INTERVAL '1 day'` : timeFilter === "week" ? sql`AND b.created_at > NOW() - INTERVAL '1 week'` : timeFilter === "month" ? sql`AND b.created_at > NOW() - INTERVAL '1 month'` : timeFilter === "year" ? sql`AND b.created_at > NOW() - INTERVAL '1 year'` : sql``} ${token ? sql`AND e.token = ${token}` : sql``} ${chain ? sql`AND e.chain = ${chain}` : sql``}`) as [
 				{
 					investedAmount: string | null;
 				}
@@ -225,8 +226,11 @@ const getInvestedAndCurrentAmount = async (
                                 FROM "event".bet
                                 WHERE user_id = ${userId}
                                   AND profit IS NOT NULL
-                                    ${filter === "day" ? sql`AND created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? sql`AND created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? sql`AND created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? sql`AND created_at > NOW() - INTERVAL '1 year'` : sql``}
-			`) as [{ currentAmount: string | null }];
+                                    ${timeFilter === "day" ? sql`AND created_at > NOW() - INTERVAL '1 day'` : timeFilter === "week" ? sql`AND created_at > NOW() - INTERVAL '1 week'` : timeFilter === "month" ? sql`AND created_at > NOW() - INTERVAL '1 month'` : timeFilter === "year" ? sql`AND created_at > NOW() - INTERVAL '1 year'` : sql``} ${token ? sql`AND e.token = ${token}` : sql``} ${chain ? sql`AND e.chain = ${chain}` : sql``}`) as [
+				{
+					currentAmount: string | null;
+				}
+			];
 			currentAmount += Number(res2.currentAmount);
 		}
 

@@ -113,9 +113,17 @@ builder.queryField("investedAndCurrentAmount", (t) =>
 				description: "The filter to be applied to the bets based on time. It can be either day, week, month, year or all",
 				required: true,
 				defaultValue: "all"
+			}),
+			token: t.arg({
+				type: WalletSchema.TokenEnum,
+				description: "The token of the bet"
+			}),
+			chain: t.arg({
+				type: WalletSchema.ChainEnum,
+				description: "The chain of the bet"
 			})
 		},
-		resolve: async (_, { status, filter }, { user }) => await BetService.getInvestedAndCurrentAmount((user as UserService.User).id, filter, status),
+		resolve: async (_, { status, filter, token, chain }, { user }) => await BetService.getInvestedAndCurrentAmount((user as UserService.User).id, filter, status, token, chain),
 		description: "Get invested and current amount"
 	})
 );
