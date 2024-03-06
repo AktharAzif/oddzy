@@ -30,6 +30,11 @@ CREATE TABLE
     "updated_at"    TIMESTAMPTZ                 NOT NULL DEFAULT NOW()
 );
 
+
+ALTER TABLE "user".point
+    ADD FOREIGN KEY ("transaction_id") REFERENCES "wallet".transaction (id);
+
+
 CREATE TABLE
     IF NOT EXISTS "wallet".linked_wallet
 (

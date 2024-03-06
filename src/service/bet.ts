@@ -14,9 +14,6 @@ type BetType = z.infer<typeof BetType>;
 const BetStatus = z.enum(["live", "closed"]);
 type BetStatus = z.infer<typeof BetStatus>;
 
-const BetFilter = z.enum(["day", "week", "month", "year", "all"]);
-type BetFilter = z.infer<typeof BetFilter>;
-
 const Bet = z.object({
 	id: z.string().default(() => createId()),
 	eventId: z.string(),
@@ -1480,4 +1477,4 @@ const initEventPayout = async (): Promise<void> => {
 
 setInterval(initEventPayout, 5 * 1000);
 
-export { Bet, BetType, BetStatus, BetFilter, placeBet, getBets, cancelBet, isTop5Bet, getBet };
+export { Bet, BetType, BetStatus, placeBet, getBets, cancelBet, isTop5Bet, getBet };

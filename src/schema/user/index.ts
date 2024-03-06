@@ -1,7 +1,7 @@
 import { builder } from "../../config";
 import { UserService } from "../../service";
 import { ErrorUtil } from "../../util";
-import { NotificationPaginatedResponse, ReferralCode, Social, User, UserLoginResponse, UserPaginatedResponse } from "./object.ts";
+import { LeaderboardPaginatedResponse, NotificationPaginatedResponse, ReferralCode, Social, TimeFilterEnum, User, UserLoginResponse, UserPaginatedResponse } from "./object.ts";
 
 builder.queryField("twitterAuthUrl", (t) =>
 	t.field({
@@ -180,4 +180,32 @@ builder.mutationField("markNotificationAsRead", (t) =>
 	})
 );
 
-export { User, UserPaginatedResponse, NotificationPaginatedResponse };
+builder.queryField("leaderboard", (t) =>
+	t.field({
+		type: LeaderboardPaginatedResponse,
+		args: {
+			timeFilter: t.arg({
+				type: TimeFilterEnum,
+				required: true,
+				description: "The time filter for the leaderboard. It can be either day, week, month, year or all.",
+				defaultValue: "all"
+			}),
+			page: t.arg.int({
+				required: true,
+				defaultValue: 1,
+				validate: { min: 1 },
+				description: "The page number. Min 1."
+			}),
+			limit: t.arg.int({
+				required: true,
+				defaultValue: 20,
+				validate: { min: 1, max: 100 },
+				description: "The limit of users per page. Min 1, Max 100."
+			})
+		},
+		resolve: async (_, { timeFilter, page, limit }) => await UserService.getLeaderboard(timeFilter, page - 1, limit),
+		description: "Fetches the points leaderboard of the users."
+	})
+);
+
+export { User, UserPaginatedResponse, NotificationPaginatedResponse, LeaderboardPaginatedResponse, TimeFilterEnum };

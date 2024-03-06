@@ -1,8 +1,8 @@
 import { builder } from "../../config";
 import { BetService, UserService } from "../../service";
-import { WalletSchema } from "../index.ts";
+import { UserSchema, WalletSchema } from "../index.ts";
 import { GetBetsPayload, PlaceBetPayload } from "./input.ts";
-import { Bet, BetFilterEnum, BetPaginatedResponse, BetStatusEnum, BetTypeEnum } from "./object.ts";
+import { Bet, BetPaginatedResponse, BetStatusEnum, BetTypeEnum } from "./object.ts";
 
 builder.mutationField("placeBet", (t) =>
 	t.field({
@@ -53,9 +53,10 @@ builder.queryField("bets", (t) =>
 				description: "The status of the bet. It can be either live or closed"
 			}),
 			filter: t.arg({
-				type: BetFilterEnum,
+				type: UserSchema.TimeFilterEnum,
 				description: "The filter to be applied to the bets based on time. It can be either day, week, month, year or all"
 			}),
+			
 			type: t.arg({
 				type: BetTypeEnum,
 				description: "The type of the bet. It can be either buy or sell"

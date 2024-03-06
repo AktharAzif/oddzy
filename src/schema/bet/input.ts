@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BetService, WalletService } from "../../service";
+import { BetService, UserService, WalletService } from "../../service";
 
 /**
  * This is a Zod schema for validating the payload when placing a bet.
@@ -22,7 +22,7 @@ type PlaceBetPayload = z.infer<typeof PlaceBetPayload>;
 const GetBetsPayload = z.object({
 	eventId: z.string().nullish(),
 	status: BetService.BetStatus.nullish(),
-	filter: BetService.BetFilter.nullish(),
+	filter: UserService.TimeFilter.nullish(),
 	type: BetService.BetType.nullish(),
 	token: WalletService.Token.nullish(),
 	chain: WalletService.Chain.nullish()

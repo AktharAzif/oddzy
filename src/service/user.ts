@@ -8,7 +8,7 @@ import { z } from "zod";
 import { BetService, EventService } from ".";
 import { db } from "../config";
 import { UserSchema } from "../schema";
-import type { NotificationPaginatedResponse } from "../schema/user";
+import type { LeaderboardPaginatedResponse, NotificationPaginatedResponse } from "../schema/user";
 import { ErrorUtil } from "../util";
 
 const { TWITTER_CLIENT_ID, TWITTER_CLIENT_SECRET, TWITTER_CALLBACK_URL, DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_CALLBACK_URL, USER_JWT_SECRET } = Bun.env;
@@ -26,6 +26,8 @@ const twitterClient = new TwitterApi({
 	clientSecret: TWITTER_CLIENT_SECRET
 });
 
+const TimeFilter = z.enum(["day", "week", "month", "year", "all"]);
+type TimeFilter = z.infer<typeof TimeFilter>;
 const NotificationType = z.enum(["bet", "bet_win", "bet_cancel", "bet_exit", "point"]);
 type NotificationType = z.infer<typeof NotificationType>;
 
@@ -673,6 +675,132 @@ const markNotificationAsRead = async (userId: string, notificationId: string): P
 	return notification;
 };
 
+/**
+ * This function is used to get the leaderboard of users based on points.
+ * It queries the "user".point table in the database for users' points.
+ * The query is filtered based on the provided filter (day, week, month, year, or all).
+ * The points are summed up for each user and only completed points are considered.
+ * The query is grouped by user_id and ordered by points in descending order.
+ * The query is paginated using the provided page number and limit.
+ * The page number is zero-based, so the first page is page 0.
+ * The limit is the maximum number of users to return per page.
+ * It also counts the total number of distinct users who have completed points based on the provided filter.
+ * The response is then parsed using the zod schema to ensure it matches the expected structure.
+ * Finally, it returns an object containing the parsed users, the total number of users, the current page number (one-based), and the limit.
+ *
+ * @param {TimeFilter} filter - The time filter (day, week, month, year, or all).
+ * @param {number} page - The page number (zero-based).
+ * @param {number} limit - The maximum number of users to return per page.
+ * @returns {Promise<LeaderboardPaginatedResponse>} An object containing the parsed users, the total number of users, the current page number (one-based), and the limit.
+ * @async
+ */
+const getLeaderboard = async (filter: TimeFilter, page: number, limit: number): Promise<LeaderboardPaginatedResponse> => {
+	const users = db.sql`SELECT user_id, SUM(point) as points
+                       from "user".point
+                       WHERE completed = true
+                         AND ${filter === "day" ? db.sql`created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? db.sql`created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? db.sql`created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? db.sql`created_at > NOW() - INTERVAL '1 year'` : db.sql`true`}
+                       GROUP BY user_id
+                       ORDER BY points DESC
+                       LIMIT ${limit} OFFSET ${page * limit}`;
+
+	const total = db.sql`SELECT COUNT(DISTINCT user_id) as count
+                       from "user".point
+                       WHERE completed = true
+                         AND ${filter === "day" ? db.sql`created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? db.sql`created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? db.sql`created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? db.sql`created_at > NOW() - INTERVAL '1 year'` : db.sql`true`}`;
+
+	const [usersRes, [totalRes]] = await Promise.all([users, total]);
+
+	return {
+		users: z
+			.array(
+				z.object({
+					userId: z.string(),
+					points: z.coerce.number()
+				})
+			)
+			.parse(usersRes),
+		total: Number(totalRes.count),
+		page: page + 1,
+		limit
+	};
+};
+
+/**
+ * This function is used to get the leaderboard position of a user based on points.
+ * It queries the "user".point table in the database for points of the user with the provided user ID.
+ * The query is filtered based on the provided filter (day, week, month, year, or all).
+ * Only completed points are considered.
+ * The points are then summed up for each user and the users are ranked in descending order of their total points.
+ * The rank of the user with the provided user ID is then selected.
+ * If the user has no points, it returns 0.
+ * Finally, it returns the leaderboard position of the user.
+ *
+ * @param {string} userId - The ID of the user.
+ * @param {TimeFilter} filter - The time filter (day, week, month, year, or all).
+ * @returns {Promise<number>} The leaderboard position of the user.
+ * @async
+ */
+const getLeaderboardPosition = async (userId: string, filter: TimeFilter): Promise<number> => {
+	const [position] = await db.sql`SELECT position
+                                  FROM (SELECT user_id, RANK() OVER (ORDER BY SUM(point) DESC) as position
+                                        from "user".point
+                                        WHERE completed = true
+                                          AND ${filter === "day" ? db.sql`created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? db.sql`created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? db.sql`created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? db.sql`created_at > NOW() - INTERVAL '1 year'` : db.sql`true`}
+                                        GROUP BY user_id) as positions
+                                  WHERE user_id = ${userId}`;
+
+	return Number(position?.position || 0);
+};
+
+/**
+ * This function is used to get the total points of a user.
+ * It queries the "user".point table in the database for points of the user with the provided user ID.
+ * The query is filtered based on the provided filter (day, week, month, year, or all).
+ * Only completed points are considered.
+ * The points are then summed up.
+ * If the user has no points, it returns 0.
+ * Finally, it returns the total points of the user.
+ *
+ * @param {string} userId - The ID of the user.
+ * @param {TimeFilter} filter - The time filter (day, week, month, year, or all).
+ * @returns {Promise<number>} The total points of the user.
+ * @async
+ */
+const getUserPoints = async (userId: string, filter: TimeFilter): Promise<number> => {
+	const [points] = await db.sql`SELECT SUM(point) as points
+                                from "user".point
+                                WHERE user_id = ${userId}
+                                  AND completed = true
+                                  AND ${filter === "day" ? db.sql`created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? db.sql`created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? db.sql`created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? db.sql`created_at > NOW() - INTERVAL '1 year'` : db.sql`true`}`;
+
+	return Number(points.points);
+};
+
+/**
+ * This function is used to get the total referral points of a user.
+ * It queries the "user".point table in the database for points of the user with the provided user ID.
+ * The query is filtered based on the provided filter (day, week, month, year, or all).
+ * Only completed points of type 'referral' are considered.
+ * The points are then summed up.
+ * If the user has no referral points, it returns 0.
+ * Finally, it returns the total referral points of the user.
+ *
+ * @param {string} userId - The ID of the user.
+ * @param {TimeFilter} filter - The time filter (day, week, month, year, or all).
+ * @returns {Promise<number>} The total referral points of the user.
+ * @async
+ */
+const getUserReferralPoints = async (userId: string, filter: TimeFilter): Promise<number> => {
+	const [points] = await db.sql`SELECT SUM(point) as points
+                                from "user".point
+                                WHERE user_id
+                                  AND type = 'referral'
+                                  AND completed = true
+                                  AND ${filter === "day" ? db.sql`created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? db.sql`created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? db.sql`created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? db.sql`created_at > NOW() - INTERVAL '1 year'` : db.sql`true`}`;
+
+	return Number(points.points);
+};
+
 const sendNotification = async (
 	sql: TransactionSql,
 	userId: string,
@@ -756,5 +884,10 @@ export {
 	addFcmToken,
 	sendNotification,
 	getNotifications,
-	markNotificationAsRead
+	markNotificationAsRead,
+	TimeFilter,
+	getLeaderboard,
+	getLeaderboardPosition,
+	getUserPoints,
+	getUserReferralPoints
 };

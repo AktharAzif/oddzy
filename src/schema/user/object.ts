@@ -7,6 +7,11 @@ const NotificationTypeEnum = builder.enumType("NotificationTypeEnum", {
 	description: "The type of the notification"
 });
 
+const TimeFilterEnum = builder.enumType("TimeFilterEnum", {
+	values: UserService.TimeFilter.options,
+	description: "The filter to be applied to the bets based on time. It can be either day, week, month, year or all"
+});
+
 const UserLoginResponse = builder.objectRef<{ jwt: string }>("UserLoginResponse").implement({
 	fields: (t) => ({
 		jwt: t.exposeString("jwt", {
@@ -53,6 +58,47 @@ User.implement({
 			authScopes: ({ id }, args, { admin, user }) => (user && user.id === id) || admin,
 			resolve: async (parent) => await UserService.getReferralCodes(parent.id),
 			description: "The referral codes associated with the user. Only the user itself and the admin can access this field."
+		}),
+		points: t.field({
+			type: "Int",
+			args: {
+				filter: t.arg({
+					type: TimeFilterEnum,
+					required: true,
+					description: "The filter to be applied to the points based on time. It can be either day, week, month, year or all",
+					defaultValue: "all"
+				})
+			},
+			resolve: async (parent, { filter }) => await UserService.getUserPoints(parent.id, filter),
+			description: "The points of the user."
+		}),
+		referralPoints: t.field({
+			type: "Int",
+			authScopes: ({ id }, args, { admin, user }) => (user && user.id === id) || admin,
+			args: {
+				filter: t.arg({
+					type: TimeFilterEnum,
+					required: true,
+					description: "The filter to be applied to the points based on time. It can be either day, week, month, year or all",
+					defaultValue: "all"
+				})
+			},
+			resolve: async (parent, { filter }) => await UserService.getUserReferralPoints(parent.id, filter),
+			description: "The referral points of the user. Only the user itself and the admin can access this field."
+		}),
+		leaderboardPosition: t.field({
+			authScopes: ({ id }, args, { admin, user }) => (user && user.id === id) || admin,
+			type: "Int",
+			args: {
+				filter: t.arg({
+					type: TimeFilterEnum,
+					required: true,
+					description: "The filter to be applied to the points based on time. It can be either day, week, month, year or all",
+					defaultValue: "all"
+				})
+			},
+			resolve: async (parent, { filter }) => await UserService.getLeaderboardPosition(parent.id, filter),
+			description: "The position of the user in the points leaderboard. Only the user itself and the admin can access this field."
 		}),
 		createdAt: t.field({
 			authScopes: ({ id }, args, { admin, user }) => (user && user.id === id) || admin,
@@ -260,4 +306,51 @@ NotificationPaginatedResponse.implement({
 });
 type NotificationPaginatedResponse = typeof NotificationPaginatedResponse.$inferType;
 
-export { UserLoginResponse, User, Social, ReferralCode, UserPaginatedResponse, Notification, NotificationPaginatedResponse };
+const Point = builder.objectRef<{ userId: string; points: number }>("Point");
+
+Point.implement({
+	fields: (t) => ({
+		userId: t.exposeString("userId", {
+			description: "The unique identifier of the user"
+		}),
+		user: t.field({
+			type: User,
+			resolve: async (parent) => await UserService.getUser(parent.userId),
+			description: "The user"
+		}),
+		points: t.exposeInt("points", {
+			description: "The points of the user"
+		})
+	}),
+	description: "The point response object."
+});
+
+const LeaderboardPaginatedResponse = builder.objectRef<{
+	users: { userId: string; points: number }[];
+	total: number;
+	page: number;
+	limit: number;
+}>("LeaderboardPaginatedResponse");
+
+LeaderboardPaginatedResponse.implement({
+	fields: (t) => ({
+		users: t.field({
+			type: [Point],
+			resolve: (parent) => parent.users,
+			description: "The users with their points."
+		}),
+		total: t.exposeInt("total", {
+			description: "The total number of records"
+		}),
+		page: t.exposeInt("page", {
+			description: "Current page number"
+		}),
+		limit: t.exposeInt("limit", {
+			description: "The number of records per page"
+		})
+	}),
+	description: "The paginated leaderboard response object."
+});
+type LeaderboardPaginatedResponse = typeof LeaderboardPaginatedResponse.$inferType;
+
+export { UserLoginResponse, User, Social, ReferralCode, UserPaginatedResponse, Notification, NotificationPaginatedResponse, LeaderboardPaginatedResponse, TimeFilterEnum };
