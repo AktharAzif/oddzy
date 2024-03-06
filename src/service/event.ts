@@ -645,6 +645,25 @@ const getEventPool = async (eventId: string): Promise<number> => {
 
 	return Number(pool.sum);
 };
+/**
+ * This function retrieves the time of the last bet placed on a specific event from the database using the event's ID.
+ * The function returns the time of the last bet as a Date object.
+ *
+ * @async
+ * @function getLastBetTime
+ * @param {string} eventId - The ID of the event whose last bet time is to be retrieved.
+ * @returns {Promise<Date>} - Returns a promise that resolves to a Date object representing the time of the last bet placed on the event.
+ */
+
+const getLastBetTime = async (eventId: string): Promise<Date> => {
+	const [lastBetTime] = (await db.sql`
+      SELECT MAX(created_at)
+      FROM "event".bet
+      WHERE event_id = ${eventId}
+	`) as [{ max: Date }];
+
+	return lastBetTime.max;
+};
 
 /**
  * Flag to prevent multiple instances of the changeEventStatus function from running concurrently.
@@ -740,5 +759,6 @@ export {
 	getOption,
 	getEventByBetId,
 	deleteEvent,
-	getEventPool
+	getEventPool,
+	getLastBetTime
 };

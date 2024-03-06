@@ -213,6 +213,12 @@ Event.implement({
 			resolve: async (parent) => await EventService.getEventPool(parent.id),
 			description: "The total pool of the event"
 		}),
+		lastBetAt: t.field({
+			type: "Date",
+			resolve: async (parent) => await EventService.getLastBetTime(parent.id),
+			nullable: true,
+			description: "The date and time when the last bet was placed"
+		}),
 		resolved: t.exposeBoolean("resolved", {
 			authScopes: { admin: true },
 			description: "If true, the payouts have been done. Only the admin can access this field."
