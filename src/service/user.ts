@@ -617,9 +617,7 @@ const getAllUsers = async (page: number, limit: number): Promise<UserSchema.User
  */
 const addFcmToken = async (userId: string, token: string) => {
 	try {
-		await getMessaging().subscribeToTopic(token, "all");
-
-		await getMessaging().subscribeToTopic(token, userId);
+		await Promise.all([getMessaging().subscribeToTopic(token, "all"), getMessaging().subscribeToTopic(token, userId)]);
 	} catch {
 		throw new ErrorUtil.HttpException(400, "Invalid FCM token");
 	}
