@@ -6,7 +6,7 @@ import { db } from "../config";
 import { BetSchema } from "../schema";
 import { ErrorUtil } from "../util";
 import { Event, getEvent, getEventOptions, Option } from "./event.ts";
-import { UserService, WalletService } from "./index.ts";
+import { EventService, UserService, WalletService } from "./index.ts";
 import { Chain, generateTxSqlPayload, getUserTokenBalance, Token, type Transaction } from "./wallet.ts";
 
 const BetType = z.enum(["buy", "sell"]);
@@ -661,17 +661,22 @@ const getSellPayoutTxSqlPayload = (
  * @param {Event} event - The event object related to the bet.
  * @param {number} quantity - The quantity of the bet to be cancelled.
  *
- * @returns {Object} An object containing the SQL payloads for updating the bet, the transaction, and the buy bet.
+ * @param option - The option the bet is placed on. Used for sending notification to the user.
+ * @param eventResolution - A boolean indicating whether the event is being resolved. Default is false.
+ * @returns {Object} An object containing the SQL payloads for updating the bet, the transaction, the buy bet and the notification.
  * The updateBetSqlPayload is an object containing the details for updating the bet in the database.
  * The txSqlPayload is an object containing the details for updating the transaction in the database.
  * The updateBuyBetSqlPayload is an object containing the details for updating the buy bet in the database.
+ * The notificationSqlPayload is an object containing the details for inserting a notification into the database.
  *
  * @throws {ErrorUtil.HttpException} Throws an HttpException if the unmatched quantity is zero and the quantity is not null.
  */
 const getCancelBetSqlPayload = (
 	bet: Bet,
 	event: Event,
-	quantity: number
+	quantity: number,
+	option: Option,
+	eventResolution: boolean = false
 ): {
 	updateBetSqlPayload: {
 		id: string;
@@ -689,6 +694,7 @@ const getCancelBetSqlPayload = (
 		rewardAmountReturn: number;
 		updatedAt: Date;
 	} | null;
+	notificationSqlPayload: UserService.Notification[];
 } => {
 	const totalCancelAmount = bet.pricePerQuantity * quantity;
 	const totalAmount = bet.pricePerQuantity * bet.quantity - bet.rewardAmountUsed;
@@ -715,6 +721,22 @@ const getCancelBetSqlPayload = (
 	} | null = null;
 
 	let txSqlPayload: Transaction | null = null;
+	const notificationSqlPayload: UserService.Notification[] = [];
+
+	if (bet.userId) {
+		const title = "Order Cancelled";
+		const message = eventResolution
+			? `${quantity > 1 ? `${quantity} quantities` : "1 quantity"} out of ${bet.quantity} quantities of your ${bet.type} order on ${option.name} option for ${event.name} has been cancelled due to event resolution.`
+			: `Successfully cancelled ${quantity > 1 ? `${quantity} quantities` : "1 quantity"} out of ${bet.quantity} quantities of your ${bet.type} order on ${option.name} option for ${event.name}`;
+
+		notificationSqlPayload.push(
+			UserService.getNotificationSqlPayload(bet.userId, "bet_cancel", {
+				title,
+				message,
+				betId: bet.id
+			})
+		);
+	}
 
 	if (bet.type === "buy" && bet.userId) {
 		txSqlPayload = generateTxSqlPayload(bet.userId, "bet_cancel", amount, rewardAmount, event.token, event.chain, null, "completed", bet.id, quantity);
@@ -728,6 +750,15 @@ const getCancelBetSqlPayload = (
 
 		const unmatchedQuantity = bet.unmatchedQuantity - quantity;
 		if (bet.userId && unmatchedQuantity === 0) {
+			const remainingQuantity = bet.quantity - quantity;
+			notificationSqlPayload.push(
+				UserService.getNotificationSqlPayload(bet.userId, "bet_exit", {
+					title: "Order Completed",
+					message: `Your sell order on ${option.name} option for ${remainingQuantity > 1 ? `${remainingQuantity} quantities` : "1 quantity"} has been completed for ${event.name}.`,
+					betId: bet.id
+				})
+			);
+
 			if (updateBetSqlPayload.quantity) {
 				const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, {
 					...bet,
@@ -743,7 +774,8 @@ const getCancelBetSqlPayload = (
 						platformCommission
 					},
 					txSqlPayload,
-					updateBuyBetSqlPayload
+					updateBuyBetSqlPayload,
+					notificationSqlPayload
 				};
 			} else {
 				return {
@@ -753,7 +785,8 @@ const getCancelBetSqlPayload = (
 						platformCommission: 0
 					},
 					txSqlPayload,
-					updateBuyBetSqlPayload
+					updateBuyBetSqlPayload,
+					notificationSqlPayload
 				};
 			}
 		}
@@ -762,7 +795,8 @@ const getCancelBetSqlPayload = (
 	return {
 		updateBetSqlPayload,
 		txSqlPayload,
-		updateBuyBetSqlPayload
+		updateBuyBetSqlPayload,
+		notificationSqlPayload
 	};
 };
 
@@ -824,7 +858,12 @@ const cancelBet = async (userId: string, eventId: string, betId: string, quantit
 
 		if (quantity > bet.unmatchedQuantity) throw new ErrorUtil.HttpException(400, "Quantity is higher than unmatched quantity.");
 
-		const { updateBetSqlPayload: _updateBetSqlPayload, txSqlPayload, updateBuyBetSqlPayload } = getCancelBetSqlPayload(bet, event, quantity);
+		const {
+			updateBetSqlPayload: _updateBetSqlPayload,
+			txSqlPayload,
+			updateBuyBetSqlPayload,
+			notificationSqlPayload
+		} = getCancelBetSqlPayload(bet, event, quantity, await EventService.getOption(bet.optionId));
 
 		const { id: _, ...updateBetSqlPayload } = _updateBetSqlPayload;
 
@@ -836,6 +875,22 @@ const cancelBet = async (userId: string, eventId: string, betId: string, quantit
                WHERE id = ${updateBuyBetSqlPayload.id}`);
 
 		txSqlPayload && (await sql`INSERT INTO "wallet".transaction ${sql(txSqlPayload)}`);
+
+		await sql`INSERT INTO "user".notification ${sql(notificationSqlPayload)}`;
+
+		Promise.all(
+			notificationSqlPayload.map((payload) => {
+				return getMessaging().send({
+					notification: {
+						title: payload.title,
+						body: payload.message
+					},
+					topic: userId
+				});
+			})
+		).catch((error) => {
+			console.error("Error sending notification in cancel bet function", error);
+		});
 
 		return Bet.parse(
 			(
@@ -1389,9 +1444,10 @@ setInterval(liquidityEngine, 20 * 1000);
  * The function performs the following steps:
  * 1. Checks if the bets array is empty. If so, it returns immediately.
  * 2. Initializes empty arrays for storing SQL payloads for transactions and bet updates.
- * 3. Iterates over each bet in the bets array. For each bet, it generates SQL payloads for transactions and bet updates.
- * 4. If there are any transactions, it inserts them into the database.
- * 5. If there are any bet updates, it updates the bets in the database.
+ * 3. Iterates over each bet in the bets array. For each bet, it generates SQL payloads for transactions, bet updates and notifications.
+ * 4. It inserts the notifications into the database.
+ * 5. If there are any transactions, it inserts them into the database.
+ * 6. If there are any bet updates, it updates the bets in the database.
  *
  * @returns {Promise<void>} Returns a promise that resolves when all bets have been cancelled.
  */
@@ -1406,10 +1462,18 @@ const cancelBets = async (sql: TransactionSql, event: Event, bets: Bet[]): Promi
 	// [id, quantity, unmatchedQuantity, rewardAmountUsed, profit, platformCommission, updatedAt]
 	const updateBetSqlPayload: [string, number, number, number, number | null, number | null, Date][] = [];
 
+	const notificationSqlPayload: UserService.Notification[] = [];
+
 	for (const bet of bets) {
-		const { txSqlPayload: _txSqlPayload, updateBuyBetSqlPayload: _updateBuyBetSqlPayload, updateBetSqlPayload: _updateBetSqlPayload } = getCancelBetSqlPayload(bet, event, bet.unmatchedQuantity);
+		const {
+			txSqlPayload: _txSqlPayload,
+			updateBuyBetSqlPayload: _updateBuyBetSqlPayload,
+			updateBetSqlPayload: _updateBetSqlPayload,
+			notificationSqlPayload: _notificationSqlPayload
+		} = getCancelBetSqlPayload(bet, event, bet.unmatchedQuantity, await EventService.getOption(bet.optionId), true);
 
 		_txSqlPayload && txSqlPayload.push(_txSqlPayload);
+		notificationSqlPayload.push(..._notificationSqlPayload);
 
 		if (_updateBuyBetSqlPayload) {
 			const { id, soldQuantityReturn, rewardAmountReturn, updatedAt } = _updateBuyBetSqlPayload;
@@ -1421,6 +1485,22 @@ const cancelBets = async (sql: TransactionSql, event: Event, bets: Bet[]): Promi
 	}
 
 	txSqlPayload.length && (await sql`INSERT INTO "wallet".transaction ${sql(txSqlPayload)}`);
+
+	await sql`INSERT INTO "user".notification ${sql(notificationSqlPayload)}`;
+
+	Promise.all(
+		notificationSqlPayload.map((payload) => {
+			return getMessaging().send({
+				notification: {
+					title: payload.title,
+					body: payload.message
+				},
+				topic: payload.userId
+			});
+		})
+	).catch((error) => {
+		console.error("Error sending notification in cancel bet function", error);
+	});
 
 	//noinspection SqlResolve
 	updateBuyBetSqlPayload.length &&
