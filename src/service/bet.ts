@@ -1524,7 +1524,7 @@ const cancelBets = async (sql: TransactionSql, event: Event, bets: Bet[]): Promi
 
 	txSqlPayload.length && (await sql`INSERT INTO "wallet".transaction ${sql(txSqlPayload)}`);
 
-	await sql`INSERT INTO "user".notification ${sql(notificationSqlPayload)}`;
+	notificationSqlPayload.length && (await sql`INSERT INTO "user".notification ${sql(notificationSqlPayload)}`);
 
 	Promise.all(
 		notificationSqlPayload.map((payload) => {
