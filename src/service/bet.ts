@@ -565,7 +565,7 @@ const placeBet = async (userId: string, payload: BetSchema.PlaceBetPayload): Pro
 		notificationSqlPayload.push(
 			UserService.getNotificationSqlPayload(userId, "bet", {
 				title: "Order Placed",
-				message: `Successfully placed a ${type} order of ${quantity > 1 ? `${quantity} quantities` : "1 quantity"} on ${selectedOption.name} option for ${event.name}`,
+				message: `Successfully placed a ${type} order of ${quantity > 1 ? `${quantity} quantities` : "1 quantity"} on ${selectedOption.name} option for the event "${event.name}".`,
 				betId: bet.id
 			})
 		);
@@ -726,8 +726,8 @@ const getCancelBetSqlPayload = (
 	if (bet.userId) {
 		const title = "Order Cancelled";
 		const message = eventResolution
-			? `${quantity > 1 ? `${quantity} quantities` : "1 quantity"} out of ${bet.quantity} quantities of your ${bet.type} order on ${option.name} option for ${event.name} has been cancelled due to event resolution.`
-			: `Successfully cancelled ${quantity > 1 ? `${quantity} quantities` : "1 quantity"} out of ${bet.quantity} quantities of your ${bet.type} order on ${option.name} option for ${event.name}`;
+			? `${quantity > 1 ? `${quantity} quantities` : "1 quantity"} out of ${bet.quantity} quantities of your ${bet.type} order on ${option.name} option for the event "${event.name}" has been cancelled due to event resolution.`
+			: `Successfully cancelled ${quantity > 1 ? `${quantity} quantities` : "1 quantity"} out of ${bet.quantity} quantities of your ${bet.type} order on ${option.name} option for the event "${event.name}"`;
 
 		notificationSqlPayload.push(
 			UserService.getNotificationSqlPayload(bet.userId, "bet_cancel", {
@@ -754,7 +754,7 @@ const getCancelBetSqlPayload = (
 			notificationSqlPayload.push(
 				UserService.getNotificationSqlPayload(bet.userId, "bet_exit", {
 					title: "Order Completed",
-					message: `Your sell order on ${option.name} option for ${remainingQuantity > 1 ? `${remainingQuantity} quantities` : "1 quantity"} has been completed for ${event.name}.`,
+					message: `Your sell order on ${option.name} option for ${remainingQuantity > 1 ? `${remainingQuantity} quantities` : "1 quantity"} has been completed for the event "${event.name}".`,
 					betId: bet.id
 				})
 			);
@@ -1059,6 +1059,8 @@ const matchOrder = async (betId: string, eventId: string): Promise<void> => {
 		updatedAt: Date;
 	}[] = [];
 
+	const notificationSqlPayload: UserService.Notification[] = [];
+
 	const addUpdateBetSqlPayload = (betId: string, unmatchedQuantity: number, profit: number | null = null, platformCommission: number | null = null) =>
 		updateBetSqlPayload.push({
 			id: betId,
@@ -1100,6 +1102,14 @@ const matchOrder = async (betId: string, eventId: string): Promise<void> => {
 			const unmatchedQuantity = order.unmatchedQuantity - matchedQuantity;
 
 			if (order.type === "sell" && unmatchedQuantity === 0 && order.userId) {
+				notificationSqlPayload.push(
+					UserService.getNotificationSqlPayload(order.userId, "bet_exit", {
+						title: "Order Completed",
+						message: `Your sell order on ${selectedOption.name} option for ${remainingQuantity > 1 ? `${remainingQuantity} quantities` : "1 quantity"} has been completed for the event "${event.name}".`,
+						betId: order.id
+					})
+				);
+
 				const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, order);
 
 				addUpdateBetSqlPayload(order.id, unmatchedQuantity, profit, platformCommission);
@@ -1110,6 +1120,14 @@ const matchOrder = async (betId: string, eventId: string): Promise<void> => {
 		}
 
 		if (remainingQuantity === 0 && bet.type === "sell" && bet.userId) {
+			notificationSqlPayload.push(
+				UserService.getNotificationSqlPayload(bet.userId, "bet_exit", {
+					title: "Order Completed",
+					message: `Your sell order on ${selectedOption.name} option for ${remainingQuantity > 1 ? `${remainingQuantity} quantities` : "1 quantity"} has been completed for the event "${event.name}".`,
+					betId: bet.id
+				})
+			);
+
 			const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, bet);
 
 			addUpdateBetSqlPayload(bet.id, remainingQuantity, profit, platformCommission);
@@ -1117,6 +1135,8 @@ const matchOrder = async (betId: string, eventId: string): Promise<void> => {
 		} else if (unmatchedQuantity !== remainingQuantity) {
 			addUpdateBetSqlPayload(bet.id, remainingQuantity);
 		}
+
+		notificationSqlPayload.length && (await sql`INSERT INTO "user".notification ${sql(notificationSqlPayload)}`);
 
 		if (updateBetSqlPayload.length) {
 			const payload = updateBetSqlPayload.map(({ id, unmatchedQuantity, profit, platformCommission, updatedAt }) => [id, unmatchedQuantity, profit, platformCommission, updatedAt]);
