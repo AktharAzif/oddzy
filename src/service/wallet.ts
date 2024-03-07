@@ -461,11 +461,12 @@ const getLinkedWallets = async (userId: string): Promise<LinkedWallet[]> =>
  * @param {string} userId - The ID of the user who is making the deposit.
  * @param {number} amount - The amount of the deposit.
  * @param {string} transactionId - The ID of the transaction.
+ * @param conversionRate - The conversion rate of the token to USD.
  * @returns {Promise<void>} - A promise that resolves when the points have been inserted into the database.
  * @throws {Error} - If an error occurs while interacting with the database.
  */
-const sendDepositPoints = async (sql: TransactionSql, userId: string, amount: number, transactionId: string): Promise<void> => {
-	const points = 0.2 * amount;
+const sendDepositPoints = async (sql: TransactionSql, userId: string, amount: number, transactionId: string, conversionRate: number): Promise<void> => {
+	const points = Math.ceil(0.2 * amount * conversionRate);
 	const pointSqlPayload = UserService.getPointSqlPayload(userId, "deposit", points, {
 		transactionId
 	});
@@ -530,7 +531,7 @@ const verifyErc20Deposit = async (userId: string, provider: ethers.JsonRpcProvid
 
 	return await db.sql.begin(async (sql) => {
 		const transaction = Transaction.parse((await sql`INSERT INTO "wallet".transaction ${sql(payload)} RETURNING *`)[0]);
-		await sendDepositPoints(sql, userId, transaction.amount, transaction.id);
+		await sendDepositPoints(sql, userId, transaction.amount, transaction.id, await getTokenConversionRate(combination.address, token));
 		return transaction;
 	});
 };
@@ -607,7 +608,7 @@ const verifySplTokenDeposit = async (userId: string, token: Token, hash: string)
 		const transactions = z.array(Transaction).parse(await db.sql`INSERT INTO "wallet".transaction ${db.sql(insertTxSqlPayload)} RETURNING *`);
 
 		for (const transaction of transactions) {
-			await sendDepositPoints(sql, userId, transaction.amount, transaction.id);
+			await sendDepositPoints(sql, userId, transaction.amount, transaction.id, await getTokenConversionRate(combination.address, token));
 		}
 
 		return transactions;
