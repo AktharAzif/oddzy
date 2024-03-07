@@ -473,14 +473,18 @@ const addToBetQueue = async (sql: TransactionSql, bet: Bet): Promise<void> => {
  * 6. If the bet is a sell bet, it validates the buy bet for the sell bet and generates a sell bet payload.
  * 7. Inserts the bet into the database and adds it to the bet queue.
  * 8. If the bet is a buy bet, it inserts the transaction into the database.
- * 9. Gives the user points equivalent to 5% of the bet amount.
- * 10. Inserts a notification for the bet into the database and sends the notification to the user. Notification is not sent for points because that would only get credited to the user's account after 7 days.
- * 11. Returns the bet.
+ * 9. Gives the referrer 5 points if the referredBy field is provided and valid.
+ * 10. Gives the user points equivalent to 5% of the bet amount.
+ * 11. Inserts a notification for the bet into the database and sends the notification to the user. Notification is not sent for points because that would only get credited to the user's account after 7 days.
+ * 12. Returns the bet.
  *
  * @throws {ErrorUtil.HttpException} Throws an HttpException if the user is locked, the bet is a sell bet without a buy bet id, or any validation fails.
  */
 const placeBet = async (userId: string, payload: BetSchema.PlaceBetPayload): Promise<Bet> => {
-	const { price: _price, quantity, eventId, type, buyBetId, optionId } = payload;
+	const { price: _price, quantity, eventId, type, buyBetId, optionId, referredBy } = payload;
+
+	if (userId === referredBy) throw new ErrorUtil.HttpException(400, "User cannot refer themselves.");
+
 	const { selectedOption } = await validateOption(eventId, optionId);
 
 	const limitOrder = !!_price;
@@ -515,16 +519,29 @@ const placeBet = async (userId: string, payload: BetSchema.PlaceBetPayload): Pro
 		};
 		const points = Math.ceil(0.05 * totalPrice * (await WalletService.getTokenConversionRate(token.address, token.token)));
 
-		const getPointSqlPayload = UserService.getPointSqlPayload(userId, "bet", points, {
-			betId: bet.id,
-			completed: false
-		});
+		const pointSqlPayload = [];
 
-		await sql`INSERT INTO "user".point ${sql(getPointSqlPayload)}`;
+		pointSqlPayload.push(
+			UserService.getPointSqlPayload(userId, "bet", points, {
+				betId: bet.id,
+				completed: false
+			})
+		);
+
+		if (referredBy) {
+			pointSqlPayload.push(
+				UserService.getPointSqlPayload(referredBy, "referral", 5, {
+					betId: bet.id,
+					completed: false
+				})
+			);
+		}
+
+		await sql`INSERT INTO "user".point ${sql(pointSqlPayload)}`;
 
 		const notificationSqlPayload = UserService.getNotificationSqlPayload(userId, "bet", {
 			title: "Order Placed",
-			message: `You placed a ${type} order of ${quantity > 1 ? `${quantity} quantities` : "1 quantity"} on ${selectedOption.name} option for ${event.name}`,
+			message: `Successfully placed a ${type} order of ${quantity > 1 ? `${quantity} quantities` : "1 quantity"} on ${selectedOption.name} option for ${event.name}`,
 			betId: bet.id
 		});
 
