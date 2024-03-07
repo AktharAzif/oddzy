@@ -2,10 +2,8 @@ import { createId } from "@paralleldrive/cuid2";
 import { TwitterApiAutoTokenRefresher } from "@twitter-api-v2/plugin-token-refresher";
 import { getMessaging } from "firebase-admin/messaging";
 import * as jose from "jose";
-import type { TransactionSql } from "postgres";
 import { TwitterApi } from "twitter-api-v2";
 import { z } from "zod";
-import { BetService, EventService } from ".";
 import { db } from "../config";
 import { UserSchema } from "../schema";
 import type { LeaderboardPaginatedResponse, NotificationPaginatedResponse } from "../schema/user";
@@ -30,6 +28,9 @@ const TimeFilter = z.enum(["day", "week", "month", "year", "all"]);
 type TimeFilter = z.infer<typeof TimeFilter>;
 const NotificationType = z.enum(["bet", "bet_win", "bet_cancel", "bet_exit", "point"]);
 type NotificationType = z.infer<typeof NotificationType>;
+
+const PointType = z.enum(["bet", "bet_win", "bet_invite", "referral", "deposit"]);
+type PointType = z.infer<typeof PointType>;
 
 const SocialPlatform = z.enum(["twitter", "discord"]);
 type SocialPlatform = z.infer<typeof SocialPlatform>;
@@ -70,16 +71,30 @@ const User = z.object({
 type User = z.infer<typeof User>;
 
 const Notification = z.object({
-	id: z.string(),
+	id: z.string().default(() => createId()),
 	userId: z.string(),
 	title: z.string(),
 	message: z.string(),
 	type: NotificationType,
-	betId: z.string().nullable(),
-	createdAt: z.date(),
-	updatedAt: z.date()
+	betId: z.string().nullable().default(null),
+	createdAt: z.date().default(() => new Date()),
+	updatedAt: z.date().default(() => new Date())
 });
 type Notification = z.infer<typeof Notification>;
+
+const Point = z.object({
+	id: z.string().default(() => createId()),
+	userId: z.string(),
+	type: PointType,
+	point: z.number(),
+	completed: z.boolean().default(false),
+	betId: z.string().nullable().default(null),
+	referralId: z.string().nullable().default(null),
+	transactionId: z.string().nullable().default(null),
+	createdAt: z.date().default(() => new Date()),
+	updatedAt: z.date().default(() => new Date())
+});
+type Point = z.infer<typeof Point>;
 
 /**
  * This function is used to generate the Twitter authentication URL.
@@ -802,65 +817,51 @@ const getUserReferralPoints = async (userId: string, filter: TimeFilter): Promis
 	return Number(points.points);
 };
 
-const sendNotification = async (
-	sql: TransactionSql,
+const getNotificationSqlPayload = (
 	userId: string,
 	type: NotificationType,
 	data: {
-		event?: EventService.Event;
-		option?: EventService.Option;
-		bet?: BetService.Bet;
-		betQuantity?: number;
-	}
-) => {
-	let notificationSqlPayload: {
-		id: string;
-		userId: string;
 		title: string;
 		message: string;
-		type: NotificationType;
 		betId?: string;
+	}
+): Notification => {
+	const { title, message, betId } = data;
+
+	const payload = {
+		userId,
+		title,
+		message,
+		type,
+		betId
 	};
 
-	if (type.includes("bet")) {
-		const { event, option, betQuantity, bet } = data;
-		if (!event || !betQuantity || !option || !bet) throw new Error("Event, bet quantity, bet, and option are required for bet notifications");
+	return Notification.parse(payload);
+};
 
-		const title = type === "bet" ? "New Bet" : type === "bet_win" ? "Bet Win" : type === "bet_cancel" ? "Bet Cancel" : "Bet Exit";
-
-		const message =
-			type === "bet"
-				? `You placed a bet of ${betQuantity > 1 ? `${betQuantity} quantities` : "1 quantity"} on ${option.name} option for ${event.name}`
-				: type === "bet_win"
-					? `You won a bet of ${betQuantity > 1 ? `${betQuantity} quantities` : "1 quantity"} on ${option.name} option for ${event.name}`
-					: type === "bet_cancel"
-						? `You cancelled a bet of ${betQuantity > 1 ? `${betQuantity} quantities` : "1 quantity"} on ${option.name} option for ${event.name}`
-						: `You exited a bet of ${betQuantity > 1 ? `${betQuantity} quantities` : "1 quantity"} on ${option.name} option for ${event.name}`;
-
-		notificationSqlPayload = {
-			id: createId(),
-			userId,
-			title,
-			message,
-			type,
-			betId: bet.id
-		};
+const getPointSqlPayload = (
+	userId: string,
+	type: PointType,
+	point: number,
+	data: {
+		referralId?: string;
+		transactionId?: string;
+		betId?: string;
+		completed?: boolean;
 	}
+): Point => {
+	const { referralId, transactionId, betId } = data;
 
-	//@ts-ignore
-	await sql`INSERT INTO "user".notification ${db.sql(notificationSqlPayload)}`;
-	try {
-		await getMessaging().sendToTopic(userId, {
-			notification: {
-				//@ts-ignore
-				title: notificationSqlPayload.title,
-				//@ts-ignore
-				body: notificationSqlPayload.message
-			}
-		});
-	} catch (e) {
-		console.error("Error sending notification", e);
-	}
+	const payload = {
+		userId,
+		type,
+		point,
+		referralId,
+		transactionId,
+		betId
+	};
+
+	return Point.parse(payload);
 };
 
 export {
@@ -883,12 +884,13 @@ export {
 	getReferralCodes,
 	getAllUsers,
 	addFcmToken,
-	sendNotification,
 	getNotifications,
 	markNotificationAsRead,
 	TimeFilter,
 	getLeaderboard,
 	getLeaderboardPosition,
 	getUserPoints,
-	getUserReferralPoints
+	getUserReferralPoints,
+	getNotificationSqlPayload,
+	getPointSqlPayload
 };

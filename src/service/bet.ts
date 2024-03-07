@@ -1,11 +1,12 @@
 import { createId } from "@paralleldrive/cuid2";
+import { getMessaging } from "firebase-admin/messaging";
 import type { Sql, TransactionSql } from "postgres";
 import { z } from "zod";
 import { db } from "../config";
 import { BetSchema } from "../schema";
 import { ErrorUtil } from "../util";
 import { Event, getEvent, getEventOptions, Option } from "./event.ts";
-import { UserService } from "./index.ts";
+import { UserService, WalletService } from "./index.ts";
 import { Chain, generateTxSqlPayload, getUserTokenBalance, Token, type Transaction } from "./wallet.ts";
 
 const BetType = z.enum(["buy", "sell"]);
@@ -457,14 +458,26 @@ const addToBetQueue = async (sql: TransactionSql, bet: Bet): Promise<void> => {
 /**
  * This function places a bet for a given user and event.
  *
+ * @async
+ * @function placeBet
  * @param {string} userId - The ID of the user placing the bet.
- * @param {BetSchema.PlaceBetPayload} payload - The payload containing the details of the bet.
- *
+ * @param {BetSchema.PlaceBetPayload} payload - An object containing the details of the bet.
  * @returns {Promise<Bet>} Returns a promise that resolves to a Bet object.
- * The Bet object is the result of the placed bet.
  *
- * @throws {ErrorUtil.HttpException} Throws an HttpException if user tries to place simultaneous buy or sell bet.
- * @throws {ErrorUtil.HttpException} Throws an HttpException iif buy bet is not provided for sell bet.
+ * The function performs the following steps:
+ * 1. Validates the selected option for the bet.
+ * 2. Begins a SQL transaction.
+ * 3. Checks if the user is locked. If so, it throws an HttpException.
+ * 4. Validates the event for the bet.
+ * 5. If the bet is a buy bet, it validates the total price of the bet against the user's balance and generates a buy bet payload and a transaction payload.
+ * 6. If the bet is a sell bet, it validates the buy bet for the sell bet and generates a sell bet payload.
+ * 7. Inserts the bet into the database and adds it to the bet queue.
+ * 8. If the bet is a buy bet, it inserts the transaction into the database.
+ * 9. Gives the user points equivalent to 5% of the bet amount.
+ * 10. Inserts a notification for the bet into the database and sends the notification to the user. Notification is not sent for points because that would only get credited to the user's account after 7 days.
+ * 11. Returns the bet.
+ *
+ * @throws {ErrorUtil.HttpException} Throws an HttpException if the user is locked, the bet is a sell bet without a buy bet id, or any validation fails.
  */
 const placeBet = async (userId: string, payload: BetSchema.PlaceBetPayload): Promise<Bet> => {
 	const { price: _price, quantity, eventId, type, buyBetId, optionId } = payload;
@@ -495,12 +508,40 @@ const placeBet = async (userId: string, payload: BetSchema.PlaceBetPayload): Pro
 		const bet = Bet.parse((await sql`INSERT INTO "event".bet ${sql(insertBetSqlPayload)} RETURNING *`)[0]);
 		insertBetTxSqlPayload && (await sql`INSERT INTO "wallet".transaction ${sql(insertBetTxSqlPayload)}`);
 		await addToBetQueue(sql, bet);
-		await UserService.sendNotification(sql, userId, "bet", {
-			event,
-			bet,
-			option: selectedOption,
-			betQuantity: quantity
+
+		const token = WalletService.TokenCombination.find((token) => token.token === event.token && token.chain === event.chain) as {
+			address: string;
+			token: Token;
+		};
+		const points = Math.ceil(0.05 * totalPrice * (await WalletService.getTokenConversionRate(token.address, token.token)));
+
+		const getPointSqlPayload = UserService.getPointSqlPayload(userId, "bet", points, {
+			betId: bet.id,
+			completed: false
 		});
+
+		await sql`INSERT INTO "user".point ${sql(getPointSqlPayload)}`;
+
+		const notificationSqlPayload = UserService.getNotificationSqlPayload(userId, "bet", {
+			title: "Order Placed",
+			message: `You placed a ${type} order of ${quantity > 1 ? `${quantity} quantities` : "1 quantity"} on ${selectedOption.name} option for ${event.name}`,
+			betId: bet.id
+		});
+
+		await sql`INSERT INTO "user".notification ${sql(notificationSqlPayload)}`;
+
+		getMessaging()
+			.send({
+				notification: {
+					title: notificationSqlPayload.title,
+					body: notificationSqlPayload.message
+				},
+				topic: userId
+			})
+			.catch((error) => {
+				console.error("Error sending notification for placing bet", error);
+			});
+
 		return bet;
 	});
 };

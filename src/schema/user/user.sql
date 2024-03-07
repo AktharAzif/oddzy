@@ -77,5 +77,6 @@ CREATE TABLE IF NOT EXISTS "user".point
     "bet_id"         CHAR(24),
     "referral_id"    CHAR(24) REFERENCES "user".referral (id),
     "transaction_id" CHAR(24),
-    "created_at"     TIMESTAMPTZ       NOT NULL DEFAULT NOW()
+    "created_at"     TIMESTAMPTZ       NOT NULL DEFAULT NOW(),
+    "updated_at"     TIMESTAMPTZ       NOT NULL DEFAULT NOW()
 );
