@@ -530,7 +530,7 @@ const placeBet = async (userId: string, payload: BetSchema.PlaceBetPayload): Pro
 
 		if (referredBy) {
 			pointSqlPayload.push(
-				UserService.getPointSqlPayload(referredBy, "referral", 5, {
+				UserService.getPointSqlPayload(referredBy, "bet_invite", 5, {
 					betId: bet.id,
 					completed: false
 				})
