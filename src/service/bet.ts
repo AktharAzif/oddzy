@@ -730,8 +730,10 @@ const getCancelBetSqlPayload = (
 	if (bet.userId) {
 		const title = "Order Cancelled";
 		const message = eventResolution
-			? `${quantity > 1 ? `${quantity} quantities` : "1 quantity"} out of ${bet.quantity} quantities of your ${bet.type} order on ${option.name} option for the event "${event.name}" has been cancelled due to event resolution.`
-			: `Successfully cancelled ${quantity > 1 ? `${quantity} quantities` : "1 quantity"} out of ${bet.quantity} quantities of your ${bet.type} order on ${option.name} option for the event "${event.name}"`;
+			? `${quantity} out of ${bet.quantity} ${
+					bet.quantity > 1 ? "quantities" : "quantity"
+				} of your ${bet.type} order on ${option.name} option for the event "${event.name}" has been cancelled due to event resolution.`
+			: `Successfully cancelled ${quantity} out of ${bet.quantity > 1 ? `quantities` : "quantity"} of your ${bet.type} order on ${option.name} option for the event "${event.name}"`;
 
 		notificationSqlPayload.push(
 			UserService.getNotificationSqlPayload(bet.userId, "bet_cancel", {
