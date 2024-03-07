@@ -560,6 +560,10 @@ const placeBet = async (userId: string, payload: BetSchema.PlaceBetPayload): Pro
 					message: `You have received 25 points for referring a user who just placed their first bet.`
 				})
 			);
+
+			await sql`UPDATE "user".referral
+                SET completed = true
+                WHERE id = ${referral.id}`;
 		}
 
 		notificationSqlPayload.push(
@@ -751,13 +755,15 @@ const getCancelBetSqlPayload = (
 		const unmatchedQuantity = bet.unmatchedQuantity - quantity;
 		if (bet.userId && unmatchedQuantity === 0) {
 			const remainingQuantity = bet.quantity - quantity;
-			notificationSqlPayload.push(
-				UserService.getNotificationSqlPayload(bet.userId, "bet_exit", {
-					title: "Order Completed",
-					message: `Your sell order on ${option.name} option for ${remainingQuantity > 1 ? `${remainingQuantity} quantities` : "1 quantity"} has been completed for the event "${event.name}".`,
-					betId: bet.id
-				})
-			);
+
+			if (remainingQuantity)
+				notificationSqlPayload.push(
+					UserService.getNotificationSqlPayload(bet.userId, "bet_exit", {
+						title: "Order Completed",
+						message: `Your sell order on ${option.name} option for ${remainingQuantity > 1 ? `${remainingQuantity} quantities` : "1 quantity"} has been completed for the event "${event.name}".`,
+						betId: bet.id
+					})
+				);
 
 			if (updateBetSqlPayload.quantity) {
 				const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, {
@@ -1035,9 +1041,10 @@ const removeBetFromQueue = async (sql: TransactionSql, betId: string): Promise<v
  * 7. Iterates over the unmatched orders. For each order, it calculates the matched quantity and updates the remaining quantity of the bet. It also generates SQL payloads for matched bets and sell payout transactions.
  * 8. If the remaining quantity of the bet is zero and the bet is a sell bet placed by a user, it generates a sell payout transaction.
  * 9. If the unmatched quantity of the bet has changed, it generates a SQL payload for updating the bet.
- * 10. Updates the bets in the database using the generated SQL payloads.
- * 11. Inserts the matched bets and sell payout transactions into the database.
- * 12. Removes the bet from the queue.
+ * 10. Sends notifications for completed sell orders.
+ * 11. Updates the bets in the database using the generated SQL payloads.
+ * 12. Inserts the matched bets and sell payout transactions into the database.
+ * 13. Removes the bet from the queue.
  *
  * @returns {Promise<void>} Returns a promise that resolves when the bet has been matched.
  */
@@ -1293,20 +1300,29 @@ const getLiquidityMatchableBets = async (): Promise<Array<Bet>> =>
  * @param {TransactionSql} sql - The SQL transaction object.
  * @param {Bet} bet - The bet object for which the counter liquidity bet is being placed.
  * @param {Event} event - The event object related to the bet.
- * @param {number} selectedOption - The ID of the selected option for the bet.
+ * @param {Option} selectedOption - The ID of the selected option for the bet.
  * @param {number} otherOption - The ID of the other option for the bet.
  * @param {number} quantity - The quantity of the bet.
  *
  * @returns {Promise<void>} Returns a promise that resolves when the counter liquidity bet has been placed.
  */
-const placeCounterLiquidityBet = async (sql: TransactionSql, bet: Bet, event: Event, selectedOption: number, otherOption: number, quantity: number): Promise<void> => {
+const placeCounterLiquidityBet = async (sql: TransactionSql, bet: Bet, event: Event, selectedOption: Option, otherOption: number, quantity: number): Promise<void> => {
 	let counterBuyBet: Bet;
 	const unmatchedQuantity = bet.unmatchedQuantity - quantity;
 
 	if (bet.type === "sell") {
-		counterBuyBet = generateInsertBetSqlPayload(null, bet.eventId, selectedOption, bet.pricePerQuantity, 0, quantity, "buy", bet.limitOrder, quantity, null, null, 0);
+		counterBuyBet = generateInsertBetSqlPayload(null, bet.eventId, selectedOption.id, bet.pricePerQuantity, 0, quantity, "buy", bet.limitOrder, quantity, null, null, 0);
 
 		if (unmatchedQuantity === 0) {
+			const remainingQuantity = bet.quantity - quantity;
+			const notificationSqlPayload = UserService.getNotificationSqlPayload(bet.userId as string, "bet_exit", {
+				title: "Order Completed",
+				message: `Your sell order on ${selectedOption.name} option for ${remainingQuantity > 1 ? `${remainingQuantity} quantities` : "1 quantity"} has been completed for the event "${event.name}".`,
+				betId: bet.id
+			});
+
+			await sql`INSERT INTO "user".notification ${sql(notificationSqlPayload)}`;
+
 			const { payoutTxSqlPayload, profit, platformCommission } = getSellPayoutTxSqlPayload(event, bet);
 
 			await sql`INSERT INTO "wallet".transaction ${sql(payoutTxSqlPayload)}`;
@@ -1398,7 +1414,7 @@ const matchWithLiquidityEngine = async (bet: Bet): Promise<void> => {
 		if (pricePerQuantity > event.platformLiquidityLeft) return;
 		const liquidityMatchableQuantity = Math.floor(event.platformLiquidityLeft / pricePerQuantity);
 
-		await placeCounterLiquidityBet(sql, bet, event, selectedOption.id, otherOption.id, liquidityMatchableQuantity > bet.unmatchedQuantity ? bet.unmatchedQuantity : liquidityMatchableQuantity);
+		await placeCounterLiquidityBet(sql, bet, event, selectedOption, otherOption.id, liquidityMatchableQuantity > bet.unmatchedQuantity ? bet.unmatchedQuantity : liquidityMatchableQuantity);
 	});
 };
 
@@ -1607,14 +1623,16 @@ const cancelAllRemainingBets = async (sql: TransactionSql, event: Event): Promis
  * 4. Generates an object containing the details for updating the bet in the database.
  * 5. Generates a transaction payload for the payout transaction using the generateTxSqlPayload function.
  *
+ * @param option - The winning option for the event.
  * @returns {Object} Returns an object containing the update bet payload and the transaction payload.
  * The update bet payload is an object containing the details for updating the bet in the database.
  * The transaction payload is an object containing the details for the payout transaction.
  */
-const getBetWinningPayoutTxSqlPayload = (
+const getBetWinningPayoutTxSqlPayload = async (
 	event: Event,
-	bet: Bet
-): {
+	bet: Bet,
+	option: Option
+): Promise<{
 	updateBetPayload: {
 		id: string;
 		profit: number;
@@ -1622,7 +1640,9 @@ const getBetWinningPayoutTxSqlPayload = (
 		updatedAt: Date;
 	};
 	txPayload: Transaction;
-} => {
+	notificationPayload: UserService.Notification;
+	pointSqlPayload: UserService.Point;
+}> => {
 	//Only buy bets will win an event. So soldQuantity will always be a number because it's a buy bet. So, casting it as number
 	const quantity = bet.quantity - (bet.soldQuantity as number);
 
@@ -1639,9 +1659,28 @@ const getBetWinningPayoutTxSqlPayload = (
 
 	const txPayload = generateTxSqlPayload(bet.userId as string, "bet_win", amount, bet.rewardAmountUsed, event.token, event.chain, null, "completed", bet.id, quantity);
 
+	const notificationPayload = UserService.getNotificationSqlPayload(bet.userId as string, "bet_win", {
+		title: "Bet Won",
+		message: `Your buy order on ${option.name} option for ${quantity > 1 ? `${quantity} quantities` : "1 quantity"} has won for the event "${event.name}".`,
+		betId: bet.id
+	});
+
+	const token = WalletService.TokenCombination.find((token) => token.chain === event.chain && token.token === event.token) as {
+		address: string;
+		token: Token;
+	};
+
+	const points = Math.ceil(0.2 * _amount * (await WalletService.getTokenConversionRate(token.address, token.token)));
+
+	const pointSqlPayload = UserService.getPointSqlPayload(bet.userId as string, "bet_win", points, {
+		betId: bet.id
+	});
+
 	return {
 		updateBetPayload,
-		txPayload
+		txPayload,
+		notificationPayload,
+		pointSqlPayload
 	};
 };
 /**
@@ -1703,13 +1742,22 @@ const resolveEvent = async (eventId: string): Promise<void> => {
 		);
 
 		const txSqlPayload: Transaction[] = [];
+		const notificationSqlPayload: UserService.Notification[] = [];
+		const pointSqlPayload: UserService.Point[] = [];
 
 		//[id, profit, platformCommission, updatedAt]
 		const updateBetSqlPayload: [string, number, number, Date][] = [];
 
 		for (const bet of bets) {
-			const { updateBetPayload, txPayload } = getBetWinningPayoutTxSqlPayload(event, bet);
+			const {
+				updateBetPayload,
+				txPayload,
+				notificationPayload: _notificationPayload,
+				pointSqlPayload: _pointSqlPayload
+			} = await getBetWinningPayoutTxSqlPayload(event, bet, await EventService.getOption(event.optionWon));
 			txSqlPayload.push(txPayload);
+			notificationSqlPayload.push(_notificationPayload);
+			pointSqlPayload.push(_pointSqlPayload);
 			const { id, profit, platformCommission, updatedAt } = updateBetPayload;
 			updateBetSqlPayload.push([id, profit, platformCommission, updatedAt]);
 		}
@@ -1729,6 +1777,10 @@ const resolveEvent = async (eventId: string): Promise<void> => {
 		`);
 
 		txSqlPayload.length && (await sql`INSERT INTO "wallet".transaction ${sql(txSqlPayload)}`);
+
+		notificationSqlPayload.length && (await sql`INSERT INTO "user".notification ${sql(notificationSqlPayload)}`);
+
+		pointSqlPayload.length && (await sql`INSERT INTO "user".point ${sql(pointSqlPayload)}`);
 
 		await sql`UPDATE "event".event
               SET resolved    = true,

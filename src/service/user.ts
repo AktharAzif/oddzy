@@ -890,5 +890,6 @@ export {
 	getUserPoints,
 	getUserReferralPoints,
 	getNotificationSqlPayload,
-	getPointSqlPayload
+	getPointSqlPayload,
+	Point
 };
