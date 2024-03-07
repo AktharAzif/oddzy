@@ -10,7 +10,7 @@ import { db, rpcProviders } from "../config";
 import { redis } from "../config/db.ts";
 import type { TransactionPaginatedResponse } from "../schema/wallet/object.ts";
 import { ErrorUtil } from "../util";
-import { WalletService } from "./index.ts";
+import { UserService, WalletService } from "./index.ts";
 
 const { EVM_PRIVATE_KEY, SOLANA_PRIVATE_KEY } = Bun.env;
 
@@ -450,10 +450,34 @@ const getLinkedWallets = async (userId: string): Promise<LinkedWallet[]> =>
 	);
 
 /**
+ * This function is used to send reward points to a user's account.
+ * It first calculates the points based on the deposit amount (20% of the deposit amount).
+ * Then it generates a SQL payload for the points using the UserService's getPointSqlPayload function.
+ * Finally, it inserts the points into the "user".point table in the database.
+ *
+ * @async
+ * @function sendDepositPoints
+ * @param {TransactionSql} sql - The SQL query function.
+ * @param {string} userId - The ID of the user who is making the deposit.
+ * @param {number} amount - The amount of the deposit.
+ * @param {string} transactionId - The ID of the transaction.
+ * @returns {Promise<void>} - A promise that resolves when the points have been inserted into the database.
+ * @throws {Error} - If an error occurs while interacting with the database.
+ */
+const sendDepositPoints = async (sql: TransactionSql, userId: string, amount: number, transactionId: string): Promise<void> => {
+	const points = 0.2 * amount;
+	const pointSqlPayload = UserService.getPointSqlPayload(userId, "deposit", points, {
+		transactionId
+	});
+	await sql`INSERT INTO "user".point ${sql(pointSqlPayload)}`;
+};
+
+/**
  * Verifies an ERC20 token deposit transaction.
  * It checks if the transaction already exists, if not, it retrieves the transaction receipt from the blockchain.
  * It then verifies if the transaction is a valid ERC20 transfer event and if the transaction was sent to the platform wallet.
  * If all checks pass, it generates a transaction payload and inserts it into the database.
+ * It also sends reward points to the user's account based on the deposit amount.
  *
  * @async
  * @function verifyErc20Deposit
@@ -501,8 +525,14 @@ const verifyErc20Deposit = async (userId: string, provider: ethers.JsonRpcProvid
 		throw new ErrorUtil.HttpException(400, "Transaction not sent from linked wallet.");
 	}
 
-	const payload = generateTxSqlPayload(userId, "deposit", Number(ethers.formatUnits(value, combination.decimals)), 0, token, chain, hash);
-	return Transaction.parse((await db.sql`INSERT INTO "wallet".transaction ${db.sql(payload)} RETURNING *`)[0]);
+	const amount = Number(ethers.formatUnits(value, combination.decimals));
+	const payload = generateTxSqlPayload(userId, "deposit", amount, 0, token, chain, hash);
+
+	return await db.sql.begin(async (sql) => {
+		const transaction = Transaction.parse((await sql`INSERT INTO "wallet".transaction ${sql(payload)} RETURNING *`)[0]);
+		await sendDepositPoints(sql, userId, transaction.amount, transaction.id);
+		return transaction;
+	});
 };
 
 /**
@@ -511,6 +541,7 @@ const verifyErc20Deposit = async (userId: string, provider: ethers.JsonRpcProvid
  * It checks if the transaction already exists, if not, it retrieves the transaction from the blockchain.
  * It then verifies if the transaction is a valid SPL token transfer event and if the transaction was sent to the platform wallet.
  * If all checks pass, it generates a transaction payload and inserts it into the database.
+ * It also sends reward points to the user's account based on the deposit amount.
  *
  * @async
  * @function verifySplTokenDeposit
@@ -572,7 +603,15 @@ const verifySplTokenDeposit = async (userId: string, token: Token, hash: string)
 
 	if (!insertTxSqlPayload.length) throw new ErrorUtil.HttpException(400, `Invalid transaction. No SPL ${token} token transfer event found from the linked wallets to the platform wallet.`);
 
-	return z.array(Transaction).parse(await db.sql`INSERT INTO "wallet".transaction ${db.sql(insertTxSqlPayload)} RETURNING *`);
+	return db.sql.begin(async (sql) => {
+		const transactions = z.array(Transaction).parse(await db.sql`INSERT INTO "wallet".transaction ${db.sql(insertTxSqlPayload)} RETURNING *`);
+
+		for (const transaction of transactions) {
+			await sendDepositPoints(sql, userId, transaction.amount, transaction.id);
+		}
+
+		return transactions;
+	});
 };
 
 /**
