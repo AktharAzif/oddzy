@@ -473,10 +473,11 @@ const addToBetQueue = async (sql: TransactionSql, bet: Bet): Promise<void> => {
  * 6. If the bet is a sell bet, it validates the buy bet for the sell bet and generates a sell bet payload.
  * 7. Inserts the bet into the database and adds it to the bet queue.
  * 8. If the bet is a buy bet, it inserts the transaction into the database.
- * 9. Gives the referrer 5 points if the referredBy field is provided and valid.
- * 10. Gives the user points equivalent to 5% of the bet amount.
- * 11. Inserts a notification for the bet into the database and sends the notification to the user. Notification is not sent for points because that would only get credited to the user's account after 7 days.
- * 12. Returns the bet.
+ * 9. Gives the user points equivalent to 5% of the bet amount.
+ * 10. Gives the event referrer 5 points if the referredBy field is provided and valid.
+ * 11. If it is user's first bet, and they were referred by someone to sign up to the platform, gives the referrer 25 points.
+ * 12. Inserts a notification for the bet into the database and sends the notification to the user. Notification is not sent for points because that would only get credited to the user's account after 7 days.
+ * 13. Returns the bet.
  *
  * @throws {ErrorUtil.HttpException} Throws an HttpException if the user is locked, the bet is a sell bet without a buy bet id, or any validation fails.
  */
@@ -520,6 +521,7 @@ const placeBet = async (userId: string, payload: BetSchema.PlaceBetPayload): Pro
 		const points = Math.ceil(0.05 * totalPrice * (await WalletService.getTokenConversionRate(token.address, token.token)));
 
 		const pointSqlPayload = [];
+		const notificationSqlPayload = [];
 
 		pointSqlPayload.push(
 			UserService.getPointSqlPayload(userId, "bet", points, {
@@ -537,27 +539,53 @@ const placeBet = async (userId: string, payload: BetSchema.PlaceBetPayload): Pro
 			);
 		}
 
+		const [referral] = (await sql`SELECT rc.user_id, r.id
+                                  FROM "user".referral r
+                                           JOIN "user".referral_code rc ON r.referral_code_id = rc.id
+                                  WHERE r.user_id = ${userId}
+                                    AND r.completed = false`) as [{ userId: string | null; id: string }] | [];
+
+		if (referral?.userId) {
+			pointSqlPayload.push(
+				UserService.getPointSqlPayload(referral.userId, "referral", 25, {
+					betId: bet.id,
+					referralId: referral.id,
+					completed: true
+				})
+			);
+
+			notificationSqlPayload.push(
+				UserService.getNotificationSqlPayload(referral.userId, "point", {
+					title: "Referral Bonus",
+					message: `You have received 25 points for referring a user who just placed their first bet.`
+				})
+			);
+		}
+
+		notificationSqlPayload.push(
+			UserService.getNotificationSqlPayload(userId, "bet", {
+				title: "Order Placed",
+				message: `Successfully placed a ${type} order of ${quantity > 1 ? `${quantity} quantities` : "1 quantity"} on ${selectedOption.name} option for ${event.name}`,
+				betId: bet.id
+			})
+		);
+
 		await sql`INSERT INTO "user".point ${sql(pointSqlPayload)}`;
-
-		const notificationSqlPayload = UserService.getNotificationSqlPayload(userId, "bet", {
-			title: "Order Placed",
-			message: `Successfully placed a ${type} order of ${quantity > 1 ? `${quantity} quantities` : "1 quantity"} on ${selectedOption.name} option for ${event.name}`,
-			betId: bet.id
-		});
-
 		await sql`INSERT INTO "user".notification ${sql(notificationSqlPayload)}`;
 
-		getMessaging()
-			.send({
-				notification: {
-					title: notificationSqlPayload.title,
-					body: notificationSqlPayload.message
-				},
-				topic: userId
+		Promise.all(
+			notificationSqlPayload.map((payload) => {
+				return getMessaging().send({
+					notification: {
+						title: payload.title,
+						body: payload.message
+					},
+					topic: userId
+				});
 			})
-			.catch((error) => {
-				console.error("Error sending notification for placing bet", error);
-			});
+		).catch((error) => {
+			console.error("Error sending notification in place bet function", error);
+		});
 
 		return bet;
 	});
