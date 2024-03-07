@@ -562,7 +562,7 @@ const getUser = async (userId: string): Promise<User> => {
  * @returns {Promise<User>} The updated user's data.
  * @async
  */
-const updateUser = async (userId: string, about: string, instagram: string): Promise<User> => {
+const updateUser = async (userId: string, about: string | null = null, instagram: string | null = null): Promise<User> => {
 	const [user] = await db.sql`UPDATE "user".user
                               SET about      = ${about},
                                   instagram  = ${instagram},

@@ -83,8 +83,8 @@ builder.mutationField("updateUser", (t) =>
 		authScopes: (_, __, { user }) => (user && user.access) || false,
 		type: User,
 		args: {
-			instagram: t.arg.string({ required: true, description: "The Instagram username of the user." }),
-			about: t.arg.string({ required: true, description: "The about section of the user." })
+			instagram: t.arg.string({ description: "The Instagram username of the user." }),
+			about: t.arg.string({ description: "The about section of the user." })
 		},
 		resolve: async (_, { instagram, about }, { user }) => {
 			return await UserService.updateUser((user as UserService.User).id, about, instagram);
