@@ -1,5 +1,6 @@
 import { builder } from "../../config";
 import { BetService, UserService } from "../../service";
+import { ErrorUtil } from "../../util";
 import { UserSchema, WalletSchema } from "../index.ts";
 import { GetBetsPayload, PlaceBetPayload } from "./input.ts";
 import { Bet, BetPaginatedResponse, BetStatusEnum, BetTypeEnum, InvestedAndCurrentAmountResponse } from "./object.ts";
@@ -57,7 +58,7 @@ builder.queryField("bets", (t) =>
 				type: UserSchema.TimeFilterEnum,
 				description: "The filter to be applied to the bets based on time. It can be either day, week, month, year or all"
 			}),
-
+			userId: t.arg.string({ description: "The unique identifier of the user" }),
 			type: t.arg({
 				type: BetTypeEnum,
 				description: "The type of the bet. It can be either buy or sell"
@@ -71,8 +72,11 @@ builder.queryField("bets", (t) =>
 				description: "The chain of the bet"
 			})
 		},
-		resolve: async (_, { page, limit, ...args }, { user }) => {
-			const userId = user && user.id;
+		resolve: async (_, { page, limit, userId, ...args }, { user, admin }) => {
+			if (!admin && userId) {
+				throw new ErrorUtil.HttpException(400, "Only admin can filter by userId");
+			}
+			userId = user ? (user as UserService.User).id : userId;
 			return await BetService.getBets(userId, args, page - 1, limit);
 		},
 		description: "Get all bets filtered by user, event, status, filter and type. Either userId or eventId is required"
