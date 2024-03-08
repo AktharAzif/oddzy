@@ -716,7 +716,7 @@ const withdrawSplToken = async (userId: string, amount: number, address: string,
 	tx.add(createTransferInstruction(source.address, destination.address, solanaWallet.publicKey, amount * 10 ** combination.decimals));
 
 	const latestBlockHash = await provider.getLatestBlockhash("confirmed");
-	tx.recentBlockhash = latestBlockHash.blockhash; //Good practice to fetch the latest block hash before sending the transaction
+	tx.recentBlockhash = latestBlockHash.blockhash;
 
 	const signature = await sendAndConfirmTransaction(provider, tx, [solanaWallet]);
 
