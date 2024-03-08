@@ -71,8 +71,7 @@ builder.queryField("bets", (t) =>
 				description: "The chain of the bet"
 			})
 		},
-		resolve: async (_, { page, limit, ...args }, { user, admin }) => {
-			if (!admin && args.eventId) throw new Error("You are only authorized to access your bets");
+		resolve: async (_, { page, limit, ...args }, { user }) => {
 			const userId = user && user.id;
 			return await BetService.getBets(userId, args, page - 1, limit);
 		},
