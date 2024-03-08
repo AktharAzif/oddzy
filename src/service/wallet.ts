@@ -1,6 +1,15 @@
 import { createId } from "@paralleldrive/cuid2";
 import { createTransferInstruction, getOrCreateAssociatedTokenAccount } from "@solana/spl-token";
-import { type AccountInfo, Keypair, type ParsedAccountData, PublicKey, type RpcResponseAndContext, sendAndConfirmTransaction, Transaction as SolanaTransaction } from "@solana/web3.js";
+import {
+	type AccountInfo,
+	ComputeBudgetProgram,
+	Keypair,
+	type ParsedAccountData,
+	PublicKey,
+	type RpcResponseAndContext,
+	sendAndConfirmTransaction,
+	Transaction as SolanaTransaction
+} from "@solana/web3.js";
 import base58 from "bs58";
 import { ethers } from "ethers";
 import type { Sql, TransactionSql } from "postgres";
@@ -714,6 +723,12 @@ const withdrawSplToken = async (userId: string, amount: number, address: string,
 
 	const tx = new SolanaTransaction(); //Alias for Transaction
 	tx.add(createTransferInstruction(source.address, destination.address, solanaWallet.publicKey, amount * 10 ** combination.decimals));
+
+	const PRIORITY_RATE = 1000;
+	const computePriceIx = ComputeBudgetProgram.setComputeUnitPrice({
+		microLamports: PRIORITY_RATE
+	});
+	tx.add(computePriceIx);
 
 	const latestBlockHash = await provider.getLatestBlockhash("confirmed");
 	tx.recentBlockhash = latestBlockHash.blockhash;
