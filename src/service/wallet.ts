@@ -718,7 +718,9 @@ const withdrawSplToken = async (userId: string, amount: number, address: string,
 	const latestBlockHash = await provider.getLatestBlockhash("confirmed");
 	tx.recentBlockhash = latestBlockHash.blockhash;
 
-	const signature = await sendAndConfirmTransaction(provider, tx, [solanaWallet]);
+	const signature = await sendAndConfirmTransaction(provider, tx, [solanaWallet], {
+		commitment: "confirmed"
+	});
 
 	const payload = generateTxSqlPayload(userId, "withdraw", -amount, 0, token, "solana", signature);
 

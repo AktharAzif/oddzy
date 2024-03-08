@@ -807,7 +807,7 @@ const getUserPoints = async (userId: string, filter: TimeFilter): Promise<number
 const getUserReferralPoints = async (userId: string, filter: TimeFilter): Promise<number> => {
 	const [points] = await db.sql`SELECT SUM(point) as points
                                 from "user".point
-                                WHERE user_id
+                                WHERE user_id = ${userId}
                                   AND type = 'referral'
                                   AND completed = true
                                   AND ${filter === "day" ? db.sql`created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? db.sql`created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? db.sql`created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? db.sql`created_at > NOW() - INTERVAL '1 year'` : db.sql`true`}`;
