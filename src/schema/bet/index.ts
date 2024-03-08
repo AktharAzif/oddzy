@@ -133,4 +133,4 @@ builder.queryField("investedAndCurrentAmount", (t) =>
 	})
 );
 
-export { Bet, PlaceBetPayload, BetPaginatedResponse, GetBetsPayload };
+export { Bet, PlaceBetPayload, BetPaginatedResponse, GetBetsPayload, BetStatusEnum };
