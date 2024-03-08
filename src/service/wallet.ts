@@ -562,13 +562,16 @@ const verifySplTokenDeposit = async (userId: string, token: Token, hash: string)
 	const transaction = await rpcProviders.solana.getParsedTransaction(hash, {
 		maxSupportedTransactionVersion: 0
 	});
+
 	if (!transaction) throw new ErrorUtil.HttpException(400, "Transaction not found.");
 
 	if (transaction.meta?.err) throw new ErrorUtil.HttpException(400, "Transaction failed.");
 
-	const transactions = transaction?.meta?.innerInstructions
+	const tokenAccount = await getOrCreateAssociatedTokenAccount(rpcProviders.solana, solanaWallet, new PublicKey(combination.address), solanaWallet.publicKey, false, "confirmed");
+
+	const transactions = transaction.transaction.message.instructions
 		//@ts-ignore
-		?.flatMap((i) => i.instructions.filter((i) => i.program === "spl-token"))
+		.filter((i) => i.program === "spl-token")
 		.map(
 			(i) =>
 				//@ts-ignore
@@ -584,7 +587,7 @@ const verifySplTokenDeposit = async (userId: string, token: Token, hash: string)
 		)
 		.filter((i) => i.type === "transfer")
 		.map((i) => i.info)
-		.filter((i) => i.destination === solanaWallet.publicKey.toBase58());
+		.filter((i) => i.destination === tokenAccount.address.toBase58());
 
 	if (!transactions || !transactions.length) throw new ErrorUtil.HttpException(400, "Invalid transaction. No SPL token transfer found to the platform wallet.");
 
