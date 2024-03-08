@@ -111,7 +111,7 @@ builder.queryField("investedAndCurrentAmount", (t) =>
 				description: "The status of the bet. It can be either live or closed",
 				required: true
 			}),
-			filter: t.arg({
+			timeFilter: t.arg({
 				type: UserSchema.TimeFilterEnum,
 				description: "The filter to be applied to the bets based on time. It can be either day, week, month, year or all",
 				required: true,
@@ -124,9 +124,11 @@ builder.queryField("investedAndCurrentAmount", (t) =>
 			chain: t.arg({
 				type: WalletSchema.ChainEnum,
 				description: "The chain of the bet"
-			})
+			}),
+			eventId: t.arg.string({ description: "The unique identifier of the event" })
 		},
-		resolve: async (_, { status, filter, token, chain }, { user }) => await BetService.getInvestedAndCurrentAmount((user as UserService.User).id, filter, status, token, chain),
+		resolve: async (_, { status, timeFilter, token, chain, eventId }, { user }) =>
+			await BetService.getInvestedAndCurrentAmount((user as UserService.User).id, timeFilter, status, token, chain, eventId),
 		description: "Get invested and current amount"
 	})
 );

@@ -131,6 +131,7 @@ const getBets = async (userId: string | null = null, payload: BetSchema.GetBetsP
  * @param {BetStatus} status - The status of the bets to be included in the calculation.
  * @param {Token} [token] - The token type of the bets to be included in the calculation. Optional.
  * @param {Chain} [chain] - The chain type of the bets to be included in the calculation. Optional.
+ * @param eventId - The ID of the event to filter the bets. Optional.
  * @returns {Promise<{investedAmount: number, currentAmount: number}>} - A promise that resolves to an object containing the invested amount and current value.
  *
  * The function performs the following steps:
@@ -155,7 +156,8 @@ const getInvestedAndCurrentAmount = async (
 	timeFilter: UserService.TimeFilter,
 	status: BetStatus,
 	token?: Token | null,
-	chain?: Chain | null
+	chain?: Chain | null,
+	eventId?: string | null
 ): Promise<{
 	investedAmount: number;
 	currentAmount: number;
@@ -170,7 +172,7 @@ const getInvestedAndCurrentAmount = async (
                                     ${token || chain ? sql`JOIN "event".event e ON b.event_id = e.id` : sql``}
                                 WHERE b.user_id = ${userId}
                                   AND b.type = 'buy'
-                                  AND b.profit IS NULL ${timeFilter === "day" ? sql`AND b.created_at > NOW() - INTERVAL '1 day'` : timeFilter === "week" ? sql`AND b.created_at > NOW() - INTERVAL '1 week'` : timeFilter === "month" ? sql`AND b.created_at > NOW() - INTERVAL '1 month'` : timeFilter === "year" ? sql`AND b.created_at > NOW() - INTERVAL '1 year'` : sql``} ${token ? sql`AND e.token = ${token}` : sql``} ${chain ? sql`AND e.chain = ${chain}` : sql``}
+                                  AND b.profit IS NULL ${timeFilter === "day" ? sql`AND b.created_at > NOW() - INTERVAL '1 day'` : timeFilter === "week" ? sql`AND b.created_at > NOW() - INTERVAL '1 week'` : timeFilter === "month" ? sql`AND b.created_at > NOW() - INTERVAL '1 month'` : timeFilter === "year" ? sql`AND b.created_at > NOW() - INTERVAL '1 year'` : sql``} ${token ? sql`AND e.token = ${token}` : sql``} ${chain ? sql`AND e.chain = ${chain}` : sql``} ${eventId ? sql`AND b.event_id = ${eventId}` : sql``}
 			`) as [
 				{
 					investedAmount: string | null;
@@ -184,7 +186,8 @@ const getInvestedAndCurrentAmount = async (
                                     ${token || chain ? sql`JOIN "event".event e ON b.event_id = e.id` : sql``}
                                 WHERE b.user_id = ${userId}
                                   AND b.type = 'sell'
-                                  AND b.profit IS NULL ${timeFilter === "day" ? sql`AND b.created_at > NOW() - INTERVAL '1 day'` : timeFilter === "week" ? sql`AND b.created_at > NOW() - INTERVAL '1 week'` : timeFilter === "month" ? sql`AND b.created_at > NOW() - INTERVAL '1 month'` : timeFilter === "year" ? sql`AND b.created_at > NOW() - INTERVAL '1 year'` : sql``} ${token ? sql`AND e.token = ${token}` : sql``} ${chain ? sql`AND e.chain = ${chain}` : sql``}`) as [
+                                  AND b.profit IS NULL ${timeFilter === "day" ? sql`AND b.created_at > NOW() - INTERVAL '1 day'` : timeFilter === "week" ? sql`AND b.created_at > NOW() - INTERVAL '1 week'` : timeFilter === "month" ? sql`AND b.created_at > NOW() - INTERVAL '1 month'` : timeFilter === "year" ? sql`AND b.created_at > NOW() - INTERVAL '1 year'` : sql``} ${token ? sql`AND e.token = ${token}` : sql``} ${chain ? sql`AND e.chain = ${chain}` : sql``} ${eventId ? sql`AND b.event_id = ${eventId}` : sql``}
+			`) as [
 				{
 					investedAmount: string | null;
 				}
