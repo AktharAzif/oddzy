@@ -28,3 +28,4 @@ const server = Bun.serve({
 console.info(`Server is running on ${new URL(yoga.graphqlEndpoint, server.url)}`);
 
 //TODO: Refactor Notification & Points to a function
+//TODO: Update doc for investedAndCurrentAmount bets and everywhere notification and points are used
