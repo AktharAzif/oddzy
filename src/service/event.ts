@@ -293,6 +293,18 @@ const createEvent = async (
 	};
 };
 
+const approveEvent = async (eventId: string): Promise<Event> => {
+	const res = await db.sql`UPDATE "event".event
+                           SET approved   = true,
+                               updated_at = NOW()
+                           WHERE id = ${eventId}
+                             AND approved = false
+                           RETURNING *;`;
+
+	if (!res.length) throw new ErrorUtil.HttpException(400, "Event not found or already approved");
+	return Event.parse(res[0]);
+};
+
 /**
  * This function retrieves the categories associated with a specific event from the database using the event's ID.
  *
@@ -780,5 +792,6 @@ export {
 	deleteEvent,
 	getEventPool,
 	getLastBetTime,
-	getTotalTrades
+	getTotalTrades,
+	approveEvent
 };

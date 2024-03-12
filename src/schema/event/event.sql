@@ -29,6 +29,7 @@ CREATE TABLE
     "token"                    "wallet".token       NOT NULL,
     "chain"                    "wallet".chain       NOT NULL,
     "slippage"                 DECIMAL              NOT NULL,
+    "approved"                 BOOLEAN              NOT NULL DEFAULT true,
     "resolved"                 BOOLEAN              NOT NULL DEFAULT false,
     "resolved_at"              TIMESTAMPTZ,
     "created_at"               TIMESTAMPTZ          NOT NULL DEFAULT NOW(),

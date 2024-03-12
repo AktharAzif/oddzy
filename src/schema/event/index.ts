@@ -417,6 +417,18 @@ builder.mutationField("deleteEvent", (t) =>
 	})
 );
 
+builder.mutationField("approveEvent", (t) =>
+	t.field({
+		type: Event,
+		authScopes: { admin: true },
+		args: {
+			id: t.arg.string({ required: true, description: "The unique identifier of the event" })
+		},
+		resolve: async (_, { id }) => await EventService.approveEvent(id),
+		description: "Approve an event by its unique identifier. Only accessible to admin."
+	})
+);
+
 export type {
 	CreateEventPayload,
 	CreateOrUpdateCategoryPayload,
