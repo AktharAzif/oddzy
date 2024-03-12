@@ -15,7 +15,7 @@ builder.mutationField("adminLogin", (t) =>
 	})
 );
 
-builder.mutationField("createAutomation", (t) =>
+builder.mutationField("createOrUpdateAutomation", (t) =>
 	t.field({
 		type: Automation,
 		authScopes: { admin: true },
@@ -89,7 +89,7 @@ builder.queryField("automations", (t) =>
 				description: "The number of automation tasks per page. Min 1, Max 100."
 			})
 		},
-		resolve: async (_, { page, limit }) => await AdminService.getAutomations(page, limit),
+		resolve: async (_, { page, limit }) => await AdminService.getAutomations(page - 1, limit),
 		description: "Get all automation tasks"
 	})
 );

@@ -1,9 +1,14 @@
+import { ChatOpenAI } from "@langchain/openai";
 import { createId } from "@paralleldrive/cuid2";
 import * as jose from "jose";
 import { z } from "zod";
 import { db } from "../config";
 import { AdminSchema } from "../schema";
 import { ErrorUtil } from "../util";
+
+const chatModel = new ChatOpenAI({
+	modelName: "gpt-4"
+});
 
 const { ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_JWT_SECRET } = process.env;
 
@@ -149,12 +154,60 @@ const getAutomations = async (page: number, limit: number): Promise<AdminSchema.
 	};
 };
 
-// const filteredDataArr = dataArr.map((obj: any) => {
-// 	const newObj: any = {};
-// 	for (const key in dataPointObj) {
-// 		if (dataPointObj[key]) newObj[key] = obj[key];
-// 	}
-// 	return newObj;
-// });
+const runAutomation = async (id: string): Promise<void> => {
+	const automation = await getAutomation(id);
+	const data = JSON.parse(automation.data);
+	const dataPoint = JSON.parse(automation.dataPoint);
+
+	const filteredDataArr = data.map((obj: any) => {
+		const newObj: any = {};
+		for (const key in dataPoint) {
+			if (dataPoint[key]) newObj[key] = obj[key];
+		}
+		return newObj;
+	});
+
+	const prompt = `You are a bot designed to generate questions for a prediction market based on the provided data.
+		The data will include game descriptions, data points, and sample questions. Your task is to generate questions and two options for each question.
+		Your questions should not closely resemble the sample questions; instead, aim for creativity in generating them. While similar questions can be included, diversity is encouraged for better engagement.
+		Aim to produce as many questions as possible, ensuring they are suitable for prediction markets.
+		Avoid questions whose answers are already evident in the data or publicly known at the time of question generation. Focus on asking about future events or unknown factors.
+		If description or sample questions are not provided, try to generate questions based on the data.
+		If you cannot generate questions, please respond with an empty array.
+		Your response should be in the following format:
+		{{
+			question: string,
+			options: [string, string]
+		}}
+		
+		Data:
+		${JSON.stringify(filteredDataArr)}
+		
+		Description:
+		${automation.description}
+		
+		Sample Questions:
+		${automation.sampleQuestion}
+		
+		Questions:`;
+
+	const res = await chatModel.invoke(prompt);
+
+	const questions = JSON.parse(res.content.toString());
+
+	console.log(questions);
+};
+
+const automationTask = async () => {
+	const automations = await db.sql`SELECT *
+                                   FROM "admin".automation
+                                   WHERE enabled = TRUE
+                                     AND run_at::TIME < NOW()::TIME
+                                     AND (last_ran_at IS NULL OR last_ran_at < NOW())`;
+
+	for (const automation of automations) {
+		await runAutomation(automation.id);
+	}
+};
 
 export { adminLogin, adminSecret, Automation, createOrUpdateAutomation, deleteAutomation, getAutomation, getAutomations };

@@ -22,17 +22,20 @@ const CreateAutomatedPayload = z
 				const data = JSON.parse(payload.data);
 				const dataPoint = JSON.parse(payload.dataPoint);
 				if (!Array.isArray(data)) return false;
-				for (const key in dataPoint) {
+				if (!data.length) return false;
+
+				for (const key in data[0]) {
+					if (!dataPoint.hasOwnProperty(key)) return false;
 					if (!(dataPoint[key] === true || dataPoint[key] === false)) return false;
-					if (!data[0].hasOwnProperty(key)) return false;
 				}
+				
 				return true;
 			} catch {
 				return false;
 			}
 		},
 		{
-			message: "data and dataPoint should be valid JSON. data should be an array and dataPoint should be a subset of data object with boolean values"
+			message: "data and dataPoint should be valid JSON. data should be an array and dataPoint should contain boolean values for each key in data"
 		}
 	);
 
