@@ -10,10 +10,14 @@ const chatModel = new ChatOpenAI({
 	modelName: "gpt-4"
 });
 
-const { ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_JWT_SECRET } = process.env;
+const { ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_JWT_SECRET, OPENAI_API_KEY } = process.env;
 
 if (!ADMIN_USERNAME || !ADMIN_PASSWORD || !ADMIN_JWT_SECRET) {
 	throw new Error("Environment variables ADMIN_USERNAME, ADMIN_PASSWORD, and ADMIN_JWT_SECRET must be set");
+}
+
+if (!OPENAI_API_KEY) {
+	throw new Error("Environment variable OPENAI_API_KEY must be set");
 }
 
 const adminSecret = new TextEncoder().encode(ADMIN_JWT_SECRET);
@@ -154,8 +158,23 @@ const getAutomations = async (page: number, limit: number): Promise<AdminSchema.
 	};
 };
 
-const runAutomation = async (id: string): Promise<void> => {
-	const automation = await getAutomation(id);
+/**
+ * This function runs an automation task. It takes an automation object as a parameter.
+ * The function first parses the data and dataPoint properties of the automation object.
+ * It then filters the data based on the dataPoint and generates a prompt for the OpenAI model.
+ * The prompt instructs the model to generate questions for a prediction market based on the provided data.
+ * The function then invokes the OpenAI model with the generated prompt and parses the response to get the generated questions.
+ * The function then prepares the data for the event and option to be inserted into the database.
+ * It then starts a transaction and for each generated question, it creates an event and options in the database.
+ * Finally, it updates the last run time and updated time of the automation task in the database.
+ *
+ * @async
+ * @function runAutomation
+ * @param {Automation} automation - The automation task to be run. It must be an object that adheres to the `Automation` schema.
+ * @returns {Promise<void>} - Returns a promise that resolves when the automation task has been run.
+ * @throws {Error} - Throws an error if there is an issue running the automation task.
+ */
+const runAutomation = async (automation: Automation): Promise<void> => {
 	const data = JSON.parse(automation.data);
 	const dataPoint = JSON.parse(automation.dataPoint);
 
@@ -193,21 +212,97 @@ const runAutomation = async (id: string): Promise<void> => {
 
 	const res = await chatModel.invoke(prompt);
 
-	const questions = JSON.parse(res.content.toString());
+	const questions = JSON.parse(res.content.toString()) as { question: string; options: string[] }[];
 
-	console.log(questions);
+	const eventData = {
+		startAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+		endAt: new Date(Date.now() + 24 * 60 * 60 * 7 * 1000),
+		platformLiquidityLeft: 0,
+		minLiquidityPercentage: 0,
+		maxLiquidityPercentage: 100,
+		liquidityInBetween: false,
+		platformFeesPercentage: 0,
+		winPrice: 100,
+		slippage: 0,
+		token: "gone",
+		chain: "polygon"
+	};
+
+	const optionData = {
+		odds: 50,
+		price: eventData.winPrice * 0.5
+	};
+
+	await db.sql.begin(async (sql) => {
+		for (const { question, options } of questions) {
+			const eventId = createId();
+			const eventSqlPayload = {
+				id: eventId,
+				name: question,
+				...eventData
+			};
+
+			const optionSqlPayload = options.map((option: string) => ({
+				name: option,
+				...optionData,
+				eventId
+			}));
+
+			await sql`INSERT INTO "event".event ${db.sql(eventSqlPayload)}`;
+			await sql`INSERT INTO "event".option ${db.sql(optionSqlPayload)}`;
+		}
+
+		await sql`UPDATE "admin".automation
+              SET last_ran_at = NOW(),
+                  updated_at= now()
+              WHERE id = ${automation.id}`;
+	});
 };
 
-const automationTask = async () => {
-	const automations = await db.sql`SELECT *
-                                   FROM "admin".automation
-                                   WHERE enabled = TRUE
-                                     AND run_at::TIME < NOW()::TIME
-                                     AND (last_ran_at IS NULL OR last_ran_at < NOW())`;
+/**
+ * Flag to indicate if an automation task is currently running.
+ */
+let automationRunning = false;
 
-	for (const automation of automations) {
-		await runAutomation(automation.id);
+/**
+ * This function runs all enabled automation tasks that are due to run.
+ * It first checks if an automation task is already running. If so, it returns immediately.
+ * If no automation task is running, it sets the `automationRunning` flag to true.
+ * It then retrieves all enabled automation tasks that are due to run from the database.
+ * For each retrieved automation task, it runs the task.
+ * If an error occurs while running an automation task, it logs the error and sets the `automationRunning` flag to false.
+ * If all automation tasks run successfully, it sets the `automationRunning` flag to false.
+ *
+ * @async
+ * @function automationTask
+ * @returns {Promise<void>} - Returns a promise that resolves when all due automation tasks have been run.
+ * @throws {Error} - Throws an error if there is an issue running an automation task.
+ */
+const automationTask = async (): Promise<void> => {
+	try {
+		if (automationRunning) return;
+		automationRunning = true;
+		const automations = z.array(Automation).parse(
+			await db.sql`SELECT *
+                   FROM "admin".automation
+                   WHERE enabled = TRUE
+                     AND run_at::TIME < NOW()::TIME
+                     AND (last_ran_at IS NULL OR last_ran_at::DATE < NOW()::DATE)`
+		);
+
+		for (const automation of automations) {
+			await runAutomation(automation);
+		}
+		automationRunning = false;
+	} catch (e) {
+		console.error(`Error running automation task: ${e}`);
+		automationRunning = false;
 	}
 };
+
+/**
+ * This line sets an interval to run the `automationTask` function every minute.
+ */
+setInterval(automationTask, 1000 * 60);
 
 export { adminLogin, adminSecret, Automation, createOrUpdateAutomation, deleteAutomation, getAutomation, getAutomations };
