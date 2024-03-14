@@ -65,6 +65,7 @@ const Event = z.object({
 	token: WalletService.Token,
 	chain: WalletService.Chain,
 	status: EventStatus,
+	approved: z.boolean(),
 	createdAt: z.date(),
 	updatedAt: z.date()
 });

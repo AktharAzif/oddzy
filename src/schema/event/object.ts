@@ -34,11 +34,12 @@ Category.implement({
 					validate: { min: 1, max: 100 }
 				})
 			},
-			resolve: async (parent, { page, limit }) =>
+			resolve: async (parent, { page, limit }, { admin }) =>
 				await EventService.getEvents(
 					{
 						category: [parent.id]
 					},
+					admin,
 					page - 1,
 					limit
 				),
@@ -238,6 +239,10 @@ Event.implement({
 			resolve: (parent) => parent.resolvedAt,
 			nullable: true,
 			description: "The date and time when the event was resolved. Only the admin can access this field."
+		}),
+		approved: t.exposeBoolean("approved", {
+			authScopes: { admin: true },
+			description: "If true, the event is approved. Only the admin can access this field."
 		}),
 		createdAt: t.field({
 			authScopes: { admin: true },
