@@ -570,42 +570,31 @@ const updateEventCategories = async (eventId: string, categories: number[]) => {
 };
 
 /**
- * This function retrieves a list of events from the database based on the provided filters and pagination parameters.
- * The function supports filtering by start time, end time, category, status, search term, token, and chain.
- * The function also supports pagination through the page and limit parameters.
- * The function returns a paginated response containing the filtered events and the total count of events that match the filters.
+ * This function retrieves a list of events from the database based on the provided parameters.
+ * The function returns a paginated response containing the events and the total count of events.
  *
  * @async
  * @function getEvents
  * @param {EventSchema.getEventsPayload} payload - The payload for retrieving events. It must be an object that adheres to the `getEventsPayload` schema.
+ * @param {boolean} admin - A boolean indicating whether the user is an admin. If true, the function returns all events. If false, the function returns only approved events.
  * @param {number} page - The page number for pagination. The first page is 0.
  * @param {number} limit - The number of events to return per page.
- * @returns {Promise<EventPaginatedResponse>} - Returns a promise that resolves to a paginated response containing the filtered events and the total count of events that match the filters.
+ * @returns {Promise<EventPaginatedResponse>} - Returns a promise that resolves to a paginated response containing the events and the total count of events.
  */
-const getEvents = async (payload: EventSchema.getEventsPayload, page: number, limit: number): Promise<EventPaginatedResponse> => {
+const getEvents = async (payload: EventSchema.getEventsPayload, admin: boolean, page: number, limit: number): Promise<EventPaginatedResponse> => {
 	const { startAt, endAt, category, status, search, token, chain } = payload;
 
 	const events = db.sql`
       SELECT *
-      FROM "event".event ${startAt || endAt || category || status || search || token || chain ? db.sql`WHERE true` : db.sql``} ${startAt ? db.sql`AND start_at >= ${startAt}` : db.sql``} ${endAt ? db.sql`AND end_at <= ${endAt}` : db.sql``}
-          ${category ? db.sql`AND id IN (SELECT event_id FROM "event".event_category WHERE category_id IN ${db.sql(category)})` : db.sql``}
-          ${status ? db.sql`AND status = ${status}` : db.sql``}
-          ${search ? db.sql`AND name ILIKE ${`%${search}%`} OR description ILIKE ${`%${search}%`}` : db.sql``}
-          ${token ? db.sql`AND token = ${token}` : db.sql``}
-          ${chain ? db.sql`AND chain = ${chain}` : db.sql``}
-          AND approved = TRUE
+      FROM "event".event
+      WHERE TRUE ${startAt ? db.sql`AND start_at >= ${startAt}` : db.sql``} ${endAt ? db.sql`AND end_at <= ${endAt}` : db.sql``} ${category ? db.sql`AND id IN (SELECT event_id FROM "event".event_category WHERE category_id IN ${db.sql(category)})` : db.sql``} ${status ? db.sql`AND status = ${status}` : db.sql``} ${search ? db.sql`AND name ILIKE ${`%${search}%`} OR description ILIKE ${`%${search}%`}` : db.sql``} ${token ? db.sql`AND token = ${token}` : db.sql``} ${chain ? db.sql`AND chain = ${chain}` : db.sql``} ${admin ? db.sql`` : db.sql`AND approved = TRUE`}
       ORDER BY start_at DESC
       OFFSET ${page * limit} LIMIT ${limit}
 	`;
 	const total = db.sql`
       SELECT COUNT(*)
-      FROM "event".event ${startAt || endAt || category || status || search || token || chain ? db.sql`WHERE true` : db.sql``} ${startAt ? db.sql`AND start_at >= ${startAt}` : db.sql``} ${endAt ? db.sql`AND end_at <= ${endAt}` : db.sql``}
-          ${category ? db.sql`AND id IN (SELECT event_id FROM "event".event_category WHERE category_id IN ${db.sql(category)})` : db.sql``}
-          ${status ? db.sql`AND status = ${status}` : db.sql``}
-          ${search ? db.sql`AND name ILIKE ${`%${search}%`} OR description ILIKE ${`%${search}%`}` : db.sql``}
-          ${token ? db.sql`AND token = ${token}` : db.sql``}
-          AND approved = TRUE
-          ${chain ? db.sql`AND chain = ${chain}` : db.sql``};
+      FROM "event".event
+      WHERE TRUE ${startAt ? db.sql`AND start_at >= ${startAt}` : db.sql``} ${endAt ? db.sql`AND end_at <= ${endAt}` : db.sql``} ${category ? db.sql`AND id IN (SELECT event_id FROM "event".event_category WHERE category_id IN ${db.sql(category)})` : db.sql``} ${status ? db.sql`AND status = ${status}` : db.sql``} ${search ? db.sql`AND name ILIKE ${`%${search}%`} OR description ILIKE ${`%${search}%`}` : db.sql``} ${token ? db.sql`AND token = ${token}` : db.sql``} ${chain ? db.sql`AND chain = ${chain}` : db.sql``} ${admin ? db.sql`` : db.sql`AND approved = TRUE`};
 	` as Promise<[{ count: string }]>;
 
 	const [eventsRes, [totalRes]] = await Promise.all([events, total]);

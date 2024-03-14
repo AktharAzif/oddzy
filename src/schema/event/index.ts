@@ -317,7 +317,7 @@ builder.queryField("events", (t) =>
 		validate: {
 			schema: z.intersection(getEventsPayload, z.object({ page: z.number().min(1), limit: z.number().min(1).max(100) }))
 		},
-		resolve: async (_, { page, limit, ...args }) => await EventService.getEvents(args, page - 1, limit),
+		resolve: async (_, { page, limit, ...args }, { admin }) => await EventService.getEvents(args, admin, page - 1, limit),
 		description: "Get a list of events"
 	})
 );
