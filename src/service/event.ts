@@ -593,6 +593,7 @@ const getEvents = async (payload: EventSchema.getEventsPayload, page: number, li
           ${search ? db.sql`AND name ILIKE ${`%${search}%`} OR description ILIKE ${`%${search}%`}` : db.sql``}
           ${token ? db.sql`AND token = ${token}` : db.sql``}
           ${chain ? db.sql`AND chain = ${chain}` : db.sql``}
+          AND approved = TRUE
       ORDER BY start_at DESC
       OFFSET ${page * limit} LIMIT ${limit}
 	`;
@@ -603,7 +604,9 @@ const getEvents = async (payload: EventSchema.getEventsPayload, page: number, li
           ${status ? db.sql`AND status = ${status}` : db.sql``}
           ${search ? db.sql`AND name ILIKE ${`%${search}%`} OR description ILIKE ${`%${search}%`}` : db.sql``}
           ${token ? db.sql`AND token = ${token}` : db.sql``}
-          ${chain ? db.sql`AND chain = ${chain}` : db.sql``};` as Promise<[{ count: string }]>;
+          AND approved = TRUE
+          ${chain ? db.sql`AND chain = ${chain}` : db.sql``};
+	` as Promise<[{ count: string }]>;
 
 	const [eventsRes, [totalRes]] = await Promise.all([events, total]);
 
