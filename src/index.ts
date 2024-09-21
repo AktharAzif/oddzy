@@ -17,7 +17,8 @@ const yoga = createYoga({
 	context: async ({ request }) => ({
 		admin: await AuthMiddleware.isAdmin(request),
 		user: await AuthMiddleware.isAuth(request)
-	})
+	}),
+	maskedErrors: false
 });
 
 const server = Bun.serve({
