@@ -115,7 +115,7 @@ const getTwitterAuthURL = async (): Promise<string> => {
 	await db.redis.set(state, codeVerifier, "EX", 300);
 
 	// Return the generated URL
-	return url;
+	return url.replace(/^https:twitter.com/, "https:x.com");
 };
 
 /**
