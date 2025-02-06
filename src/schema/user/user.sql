@@ -1,6 +1,6 @@
 CREATE SCHEMA IF NOT EXISTS "user";
 
-CREATE TYPE "user".platform AS ENUM ( 'twitter', 'discord');
+CREATE TYPE "user".platform AS ENUM ( 'twitter', 'discord', 'google');
 
 CREATE TYPE "user".notification_type AS ENUM ( 'bet', 'bet_cancel', 'bet_win', 'bet_exit', 'point');
 

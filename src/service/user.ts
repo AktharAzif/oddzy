@@ -8,12 +8,26 @@ import { db } from "../config";
 import { UserSchema } from "../schema";
 import type { LeaderboardPaginatedResponse, NotificationPaginatedResponse } from "../schema/user";
 import { ErrorUtil } from "../util";
+import { google } from "googleapis";
 
-const { TWITTER_CLIENT_ID, TWITTER_CLIENT_SECRET, TWITTER_CALLBACK_URL, DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_CALLBACK_URL, USER_JWT_SECRET } = Bun.env;
+const {
+	TWITTER_CLIENT_ID,
+	TWITTER_CLIENT_SECRET,
+	TWITTER_CALLBACK_URL,
+	DISCORD_CLIENT_ID,
+	DISCORD_CLIENT_SECRET,
+	DISCORD_CALLBACK_URL,
+	USER_JWT_SECRET,
+	GOOGLE_CLIENT_ID,
+	GOOGLE_CLIENT_SECRET,
+	GOOGLE_CALLBACK_URL
+} = Bun.env;
 
 if (!TWITTER_CLIENT_ID || !TWITTER_CLIENT_SECRET || !TWITTER_CALLBACK_URL) throw new Error("Environment variables TWITTER_CLIENT_ID, TWITTER_CLIENT_SECRET and TWITTER_CALLBACK_URL must be set");
 
 if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET || !DISCORD_CALLBACK_URL) throw new Error("Environment variables DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET and DISCORD_CALLBACK_URL must be set");
+
+if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_CALLBACK_URL) throw new Error("Environment variables GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_CALLBACK_URL must be set");
 
 if (!USER_JWT_SECRET) throw new Error("Environment variable USER_JWT_SECRET must be set");
 
@@ -24,6 +38,26 @@ const twitterClient = new TwitterApi({
 	clientSecret: TWITTER_CLIENT_SECRET
 });
 
+const googleOauthClient = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_CALLBACK_URL);
+
+const googleOAuthScopes = ["https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"];
+
+type GoogleOauthResponse = {
+	iss: string;
+	azp: string;
+	aud: string;
+	sub: string;
+	email: string;
+	email_verified: boolean;
+	at_hash: string;
+	name: string;
+	picture: string;
+	given_name: string;
+	family_name: string;
+	iat: number;
+	exp: number;
+};
+
 const TimeFilter = z.enum(["day", "week", "month", "year", "all"]);
 type TimeFilter = z.infer<typeof TimeFilter>;
 const NotificationType = z.enum(["bet", "bet_win", "bet_cancel", "bet_exit", "point"]);
@@ -32,7 +66,7 @@ type NotificationType = z.infer<typeof NotificationType>;
 const PointType = z.enum(["bet", "bet_win", "bet_invite", "referral", "deposit"]);
 type PointType = z.infer<typeof PointType>;
 
-const SocialPlatform = z.enum(["twitter", "discord"]);
+const SocialPlatform = z.enum(["twitter", "discord", "google"]);
 type SocialPlatform = z.infer<typeof SocialPlatform>;
 
 const Social = z.object({
@@ -321,6 +355,61 @@ const loginWithTwitter = async (code: string, state: string): Promise<{ jwt: str
 	};
 };
 
+const getGoogleAuthURL = () => {
+	return (
+		googleOauthClient.generateAuthUrl({
+			scope: googleOAuthScopes,
+			access_type: "offline"
+		}) + "&prompt=consent"
+	);
+};
+
+const getGoogleUserFromCode = async (code: string) => {
+	const { tokens } = await googleOauthClient.getToken(code);
+	const { refresh_token, id_token } = tokens;
+	const payload: GoogleOauthResponse = jose.decodeJwt(id_token!);
+	const { sub: id, email, name, picture: avatar } = payload;
+	return { id, email, name, avatar, refreshToken: refresh_token! };
+};
+
+const loginWithGoogle = async (code: string): Promise<{ jwt: string }> => {
+	const { id, email, name, avatar, refreshToken } = await getGoogleUserFromCode(code);
+	const username = email.split("@")[0];
+
+	const user = await getSocialAccountById(id, "google");
+
+	let userId: string;
+
+	if (user) {
+		userId = user.userId;
+
+		if (user.name !== name || user.username !== username || user.avatar !== avatar || user.email !== email) {
+			await db.sql`UPDATE "user".social
+                   SET name       = ${name},
+                       username   = ${username},
+                       avatar     = ${avatar},
+                       updated_at = ${new Date()}
+                   WHERE social_id = ${id}
+                     AND platform = 'google'`;
+		}
+	} else {
+		userId = createId();
+		await db.sql.begin((sql) => [
+			sql`INSERT INTO "user"."user" (id)
+          VALUES (${userId})`,
+			sql`INSERT INTO "user".social (id, social_id, name, username, avatar, platform, email, refresh_token, user_id)
+          VALUES (${createId()}, ${id}, ${name}, ${username}, ${avatar}, 'google', ${email}, ${refreshToken},
+                  ${userId})`
+		]);
+	}
+
+	const jwt = await new jose.SignJWT({}).setProtectedHeader({ alg: "HS256" }).setSubject(userId).sign(userJwtSecret);
+
+	return {
+		jwt
+	};
+};
+
 /**
  * This function is used to generate the Discord authentication URL.
  * It constructs the URL using the Discord client ID and callback URL from the environment variables.
@@ -437,8 +526,7 @@ const connectDiscord = async (userId: string, code: string): Promise<Social> => 
                       email      = ${email},
                       updated_at = ${new Date()}
                   WHERE social_id = ${id}
-                    AND platform = 'discord'
-                  RETURNING *`
+                    AND platform = 'discord' RETURNING *`
 			)[0];
 
 		if (discordUser) throw new ErrorUtil.HttpException(400, "Discord already connected.");
@@ -582,15 +670,14 @@ const updateUser = async (userId: string, about: string | null = null, instagram
                               SET about      = ${about},
                                   instagram  = ${instagram},
                                   updated_at = ${new Date()}
-                              WHERE id = ${userId}
-                              RETURNING *`;
+                              WHERE id = ${userId} RETURNING *`;
 	return User.parse(user);
 };
 
 const getAllUsers = async (page: number, limit: number): Promise<UserSchema.UserPaginatedResponse> => {
 	const users = db.sql`SELECT *
-                       FROM "user".user
-                       LIMIT ${limit} OFFSET ${page * limit}`;
+                       FROM "user".user LIMIT ${limit}
+                       OFFSET ${page * limit}`;
 	const total = db.sql`SELECT COUNT(*)
                        FROM "user".user` as Promise<[{ count: string }]>;
 
@@ -644,7 +731,8 @@ const getNotifications = async (userId: string, page: number, limit: number): Pr
                                FROM "user".notification
                                WHERE user_id = ${userId}
                                ORDER BY created_at DESC
-                               LIMIT ${limit} OFFSET ${page * limit}`;
+                                   LIMIT ${limit}
+                               OFFSET ${page * limit}`;
 	const total = db.sql`SELECT COUNT(*)
                        FROM "user".notification
                        WHERE user_id = ${userId}` as Promise<[{ count: string }]>;
@@ -715,7 +803,8 @@ const getLeaderboard = async (filter: TimeFilter, page: number, limit: number): 
                          AND ${filter === "day" ? db.sql`created_at > NOW() - INTERVAL '1 day'` : filter === "week" ? db.sql`created_at > NOW() - INTERVAL '1 week'` : filter === "month" ? db.sql`created_at > NOW() - INTERVAL '1 month'` : filter === "year" ? db.sql`created_at > NOW() - INTERVAL '1 year'` : db.sql`true`}
                        GROUP BY user_id
                        ORDER BY points DESC
-                       LIMIT ${limit} OFFSET ${page * limit}`;
+                           LIMIT ${limit}
+                       OFFSET ${page * limit}`;
 
 	const total = db.sql`SELECT COUNT(DISTINCT user_id) as count
                        from "user".point
@@ -891,5 +980,7 @@ export {
 	getUserReferralPoints,
 	getNotificationSqlPayload,
 	getPointSqlPayload,
-	Point
+	Point,
+	getGoogleAuthURL,
+	loginWithGoogle
 };

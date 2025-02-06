@@ -19,6 +19,25 @@ builder.queryField("discordAuthUrl", (t) =>
 	})
 );
 
+builder.queryField("googleAuthUrl", (t) =>
+	t.field({
+		type: "String",
+		resolve: UserService.getGoogleAuthURL,
+		description: "Fetches the Google authentication URL for OAuth2."
+	})
+);
+
+builder.mutationField("loginWithGoogle", (t) =>
+	t.field({
+		type: UserLoginResponse,
+		args: {
+			code: t.arg.string({ required: true, description: "The code received from the Google OAuth2 callback." })
+		},
+		resolve: async (_, { code }) => await UserService.loginWithGoogle(code),
+		description: "Handles the login process with Google OAuth2 and returns JWT."
+	})
+);
+
 builder.mutationField("login", (t) =>
 	t.field({
 		type: UserLoginResponse,
