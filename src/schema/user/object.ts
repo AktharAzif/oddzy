@@ -43,13 +43,19 @@ User.implement({
 		}),
 		twitter: t.field({
 			type: Social,
-			//Casting the return type to UserService.Social because Twitter account is always present since it is used for login
-			resolve: async (parent) => (await UserService.getSocialAccountById(parent.id, "twitter", true)) as UserService.Social,
+			nullable: true,
+			resolve: async (parent) => await UserService.getSocialAccountById(parent.id, "twitter", true),
 			description: "The Twitter account of the user."
 		}),
 		discord: t.field({
 			type: Social,
 			resolve: async (parent) => await UserService.getSocialAccountById(parent.id, "discord", true),
+			nullable: true,
+			description: "The Discord account of the user."
+		}),
+		google: t.field({
+			type: Social,
+			resolve: async (parent) => await UserService.getSocialAccountById(parent.id, "google", true),
 			nullable: true,
 			description: "The Discord account of the user."
 		}),
